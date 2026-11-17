@@ -1,0 +1,17 @@
+{
+  "name": "Rulethu Holdings — ERP",
+  "short_name": "Rulethu",
+  "description": "Rulethu Holdings integrated ERP & investment platform — investments, finance, treasury, HR, research and built-in AI.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f8f9",
+  "theme_color": "#0b6e4f",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

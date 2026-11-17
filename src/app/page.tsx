@@ -1,69 +1,93 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import Link from "next/link";
+import { MODULES } from "@/lib/modules";
+import { useAppData } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
+import { canAccessModule } from "@/lib/access";
+import { PageHeader, Card, StatCard, Badge, SectionTitle, Table, Th, Td } from "@/components/ui";
+import { fmtMoney, compact, fmtDate } from "@/lib/format";
+
+export default function Dashboard() {
+  const { deals, reports, alts, loans } = useAppData();
+  const { user } = useAuth();
+
+  const pipelineValue = deals.reduce((s, d) => s + d.ticket, 0);
+  const altNav = alts.reduce((s, a) => s + a.nav, 0);
+  const loanBook = loans.reduce((s, l) => s + l.principal, 0);
+  const atRisk = loans.filter((l) => l.status === "PAR>30").reduce((s, l) => s + l.principal, 0);
+  const modules = MODULES.filter((m) => m.key !== "dashboard" && (!user || canAccessModule(user, m.key)));
+  const latestReports = [...reports].slice(0, 3);
+  const recentDeals = [...deals].slice(0, 5);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div>
+      <PageHeader
+        title="Group Dashboard"
+        subtitle="One trusted view across the investments function and supporting operations."
+        actions={<Badge tone="live">All systems nominal</Badge>}
+      />
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatCard label="Live pipeline" value={compact(pipelineValue, "USD")} delta={{ value: `${deals.length} deals`, positive: true }} hint="proposed tickets" />
+        <StatCard label="Alt. investments NAV" value={compact(altNav, "USD")} delta={{ value: "4.1%", positive: true }} hint="vs. committed" />
+        <StatCard label="MFI loan book" value={compact(loanBook, "USD")} hint={`${loans.length} active loans`} />
+        <StatCard label="Portfolio at risk" value={compact(atRisk, "USD")} delta={{ value: "PAR>30", positive: false }} hint="flagged" />
+      </div>
+
+      <SectionTitle hint="open any module">Modules</SectionTitle>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+        {modules.map((m) => (
+          <Link key={m.key} href={m.href}>
+            <Card className="h-full transition-shadow hover:shadow-md">
+              <div className="flex items-start justify-between">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: "var(--surface-2)", color: "var(--brand)" }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                    <path d={m.icon} />
+                  </svg>
+                </div>
+                <Badge tone={m.status}>{m.status}</Badge>
+              </div>
+              <h3 className="mt-3 font-semibold" style={{ color: "var(--text)" }}>{m.name}</h3>
+              <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>{m.description}</p>
+            </Card>
+          </Link>
+        ))}
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div>
+          <SectionTitle hint="live pipeline">Investment pipeline</SectionTitle>
+          <Table head={<><Th>Deal</Th><Th>Stage</Th><Th right>Ticket</Th></>}>
+            {recentDeals.map((d) => (
+              <tr key={d.id}>
+                <Td>
+                  <Link href="/investments" className="font-medium hover:underline">{d.name}</Link>
+                  <div className="text-xs" style={{ color: "var(--text-faint)" }}>{d.sector} · {d.country}</div>
+                </Td>
+                <Td><Badge tone="beta">{d.stage}</Badge></Td>
+                <Td right strong>{fmtMoney(d.ticket)}</Td>
+              </tr>
+            ))}
+          </Table>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div>
+          <SectionTitle hint="published to the group">Latest research</SectionTitle>
+          <div className="space-y-3">
+            {latestReports.map((r) => (
+              <Card key={r.id} className="flex items-start justify-between gap-4">
+                <div>
+                  <Link href="/research" className="font-medium hover:underline" style={{ color: "var(--text)" }}>{r.title}</Link>
+                  <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>{r.summary}</p>
+                  <div className="mt-2 text-xs" style={{ color: "var(--text-faint)" }}>{r.author} · {fmtDate(r.date)}</div>
+                </div>
+                <Badge tone={r.status === "Published" ? "pos" : "warn"}>{r.status}</Badge>
+              </Card>
+            ))}
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

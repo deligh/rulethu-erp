@@ -1,0 +1,11 @@
+# Supabase config — the `ai` edge function must NOT enforce JWT verification,
+# because the static app authenticates with the PUBLIC publishable key (not a
+# signed JWT). The function stays safe because the Claude key lives only in the
+# ANTHROPIC_API_KEY secret (server-side) and your Anthropic spend cap is the
+# backstop. If you deploy from the dashboard, turn OFF "Verify JWT" / "Enforce
+# JWT verification" for this function — this file is the equivalent for the CLI.
+
+project_id = "tngmgmwuqakoaefkhsys"
+
+[functions.ai]
+verify_jwt = false
