@@ -6,6 +6,7 @@ import type { WorkProjectStatus } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { PageHeader, Badge } from "@/components/ui";
 import { askClaude } from "@/lib/aiClient";
+import { ChangePasswordCard } from "@/components/AccountSecurity";
 
 const STATUSES: WorkProjectStatus[] = ["Active", "On hold", "Done"];
 const statusTone = (s: WorkProjectStatus) => (s === "Active" ? "pos" : s === "On hold" ? "warn" : "neutral") as "pos" | "warn" | "neutral";
@@ -196,6 +197,8 @@ export default function WorkspacePage() {
               </div>
             )}
           </div>
+
+          <ChangePasswordCard />
         </div>
       </div>
     </div>

@@ -13,7 +13,7 @@ const ROLES: AccessRole[] = ["admin", "exec", "approver", "member"];
 const DEPTS = ["Investments", "Finance", "Research", "Operations", "IT", "Risk & Compliance", "Executive", "Procurement", "Marketing", "Other"];
 
 export default function AdminConsole() {
-  const { user, accounts, isAdmin, addUser, removeUser, isAdded, setPassword, resetPassword, setAccessRole, passwordFor } = useAuth();
+  const { user, accounts, isAdmin, addUser, removeUser, isAdded, setPassword, resetPassword, setAccessRole, passwordFor, audit } = useAuth();
   const { resetAll } = useAppData();
   const [edit, setEdit] = useState<string | null>(null);
   const [pw, setPw] = useState("");
@@ -181,6 +181,27 @@ export default function AdminConsole() {
       <p className="mt-2 text-[11px]" style={{ color: "var(--text-faint)" }}>
         Resetting returns an account to the shared demo password. In the real build, “reset” emails the user a secure one-time link and passwords are never visible to anyone.
       </p>
+
+      {/* Security log — password changes (self-service + admin) */}
+      <SectionTitle hint={`${audit.length} event${audit.length === 1 ? "" : "s"}`}>Security log</SectionTitle>
+      <Card className="mb-6">
+        {audit.length === 0 ? (
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>No password changes yet. When someone sets or resets a password, it appears here.</p>
+        ) : (
+          <ul className="space-y-2">
+            {audit.slice(0, 30).map((a) => {
+              const label = a.action === "self-change" ? "set their own password" : a.action === "admin-reset" ? "was reset to the default (by admin)" : a.action === "admin-set" ? "had a password set by admin" : "registered";
+              const tone = a.action === "self-change" ? "var(--pos)" : a.action === "admin-reset" ? "var(--warn)" : "var(--text-muted)";
+              return (
+                <li key={a.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span style={{ color: "var(--text)" }}><b>{a.userName}</b> <span style={{ color: tone }}>{label}</span></span>
+                  <span className="text-xs shrink-0" style={{ color: "var(--text-faint)" }}>{new Date(a.at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
 
       <SectionTitle hint="platform">Platform controls</SectionTitle>
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

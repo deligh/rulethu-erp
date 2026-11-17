@@ -10,6 +10,7 @@ import ChatBot from "@/components/ChatBot";
 import LoginGate from "@/components/LoginGate";
 import AccessGuard from "@/components/AccessGuard";
 import PageTransition from "@/components/PageTransition";
+import { DefaultPasswordBanner } from "@/components/AccountSecurity";
 import { AppDataProvider } from "@/lib/store";
 import { AuthProvider } from "@/lib/auth";
 
@@ -54,6 +55,7 @@ export default function RootLayout({
                   <div className="flex-1 flex flex-col min-w-0">
                     <Breadcrumbs />
                     <main className="flex-1 px-5 pb-8 pt-2 md:px-8 md:pb-10 max-w-[1440px] w-full mx-auto">
+                      <DefaultPasswordBanner />
                       <AccessGuard><PageTransition>{children}</PageTransition></AccessGuard>
                     </main>
                   </div>

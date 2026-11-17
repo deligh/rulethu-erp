@@ -44,12 +44,24 @@ export const ACCOUNTS: SessionUser[] = EMPLOYEES.map((e) => ({
   accessRole: ACCESS_OVERRIDES[e.id] ?? "member",
 }));
 
+export interface AuditEntry {
+  id: string;
+  userId: string;
+  userName: string;
+  action: "self-change" | "admin-set" | "admin-reset" | "register";
+  at: string;
+}
+
 interface Overrides {
   passwords: Record<string, string>;
   roles: Record<string, AccessRole>;
   names: Record<string, string>;
   added: SessionUser[];           // accounts an admin created (not in the seed directory)
+  audit: AuditEntry[];            // password-change log (admin visibility)
 }
+
+const auditEntry = (userId: string, userName: string, action: AuditEntry["action"]): AuditEntry =>
+  ({ id: `AU-${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`, userId, userName, action, at: new Date().toISOString() });
 
 export interface NewUser { name: string; email: string; department: string; role?: string; accessRole: AccessRole }
 
@@ -63,6 +75,8 @@ interface AuthCtx {
   loginAs: (id: string) => void;
   logout: () => void;
   changeMyPassword: (password: string) => void;
+  usingDefaultPassword: boolean;              // true when the signed-in user still has the default
+  audit: AuditEntry[];                        // password-change log (for the admin)
   // admin controls
   addUser: (u: NewUser) => { ok: boolean; error?: string };
   removeUser: (id: string) => void;
@@ -78,21 +92,21 @@ const Ctx = createContext<AuthCtx | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [hydrated, setHydrated] = useState(false);
-  const [overrides, setOverrides] = useState<Overrides>({ passwords: {}, roles: {}, names: {}, added: [] });
+  const [overrides, setOverrides] = useState<Overrides>({ passwords: {}, roles: {}, names: {}, added: [], audit: [] });
   const overridesRef = useRef(overrides);
   const suppressAuthSave = useRef(false);
   const authSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => { overridesRef.current = overrides; }, [overrides]);
 
   const applyAuth = (a: Partial<Overrides>) =>
-    setOverrides({ passwords: a.passwords ?? {}, roles: a.roles ?? {}, names: a.names ?? {}, added: a.added ?? [] });
+    setOverrides({ passwords: a.passwords ?? {}, roles: a.roles ?? {}, names: a.names ?? {}, added: a.added ?? [], audit: a.audit ?? [] });
 
   useEffect(() => {
     try {
       const ov = localStorage.getItem(OVERRIDES_KEY);
-      const parsed: Overrides = ov ? JSON.parse(ov) : { passwords: {}, roles: {}, names: {}, added: [] };
+      const parsed: Overrides = ov ? JSON.parse(ov) : { passwords: {}, roles: {}, names: {}, added: [], audit: [] };
       const added = parsed.added ?? [];
-      setOverrides({ passwords: parsed.passwords ?? {}, roles: parsed.roles ?? {}, names: parsed.names ?? {}, added });
+      setOverrides({ passwords: parsed.passwords ?? {}, roles: parsed.roles ?? {}, names: parsed.names ?? {}, added, audit: parsed.audit ?? [] });
       const raw = localStorage.getItem(AUTH_KEY);
       if (raw) {
         const saved = JSON.parse(raw) as { id: string };
@@ -164,15 +178,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const changeMyPassword: AuthCtx["changeMyPassword"] = useCallback((password) => {
     if (!user) return;
-    setOverrides((o) => { const next = { ...o, passwords: { ...o.passwords, [user.id]: password } }; persistOverrides(next); return next; });
+    setOverrides((o) => { const next = { ...o, passwords: { ...o.passwords, [user.id]: password }, audit: [auditEntry(user.id, user.name, "self-change"), ...o.audit].slice(0, 200) }; persistOverrides(next); return next; });
   }, [user]);
 
   const setPassword: AuthCtx["setPassword"] = useCallback((id, password) => {
-    setOverrides((o) => { const next = { ...o, passwords: { ...o.passwords, [id]: password } }; persistOverrides(next); return next; });
+    setOverrides((o) => {
+      const who = [...ACCOUNTS, ...o.added].find((a) => a.id === id);
+      const next = { ...o, passwords: { ...o.passwords, [id]: password }, audit: [auditEntry(id, o.names[id] ?? who?.name ?? id, "admin-set"), ...o.audit].slice(0, 200) };
+      persistOverrides(next); return next;
+    });
   }, []);
 
   const resetPassword: AuthCtx["resetPassword"] = useCallback((id) => {
-    setOverrides((o) => { const p = { ...o.passwords }; delete p[id]; const next = { ...o, passwords: p }; persistOverrides(next); return next; });
+    setOverrides((o) => {
+      const who = [...ACCOUNTS, ...o.added].find((a) => a.id === id);
+      const p = { ...o.passwords }; delete p[id];
+      const next = { ...o, passwords: p, audit: [auditEntry(id, o.names[id] ?? who?.name ?? id, "admin-reset"), ...o.audit].slice(0, 200) };
+      persistOverrides(next); return next;
+    });
   }, []);
 
   const setAccessRole: AuthCtx["setAccessRole"] = useCallback((id, role) => {
@@ -213,6 +236,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value: AuthCtx = {
     user, hydrated, accounts, isAdmin: user?.accessRole === "admin",
     login, register, loginAs, logout, changeMyPassword, addUser, removeUser, isAdded, setPassword, resetPassword, setAccessRole, passwordFor,
+    usingDefaultPassword: !!user && (overrides.passwords[user.id] ?? DEMO_PASSWORD) === DEMO_PASSWORD,
+    audit: overrides.audit,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
