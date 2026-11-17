@@ -677,9 +677,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         || report.summary?.trim()
         || `${report.type} for ${report.date}.`;
       const msgText =
-        `📊 **${report.title}** — just published to the group.\n\n` +
+        `📊 ${report.title} — just published to the group.\n\n` +
         summaryBlock +
-        `\n\n_Full report attached — open it to read or save as PDF, or find it in Research → Library._`;
+        `\n\nFull report attached — open it to read or save as PDF, or find it in Research → Library.`;
       const groupChannel = d.channels.some((c) => c.id === "announcements") ? "announcements" : (d.channels[0]?.id ?? "general");
       const msg: ChatMessage = {
         id: uid("MSG"), channelId: groupChannel, author: report.author,

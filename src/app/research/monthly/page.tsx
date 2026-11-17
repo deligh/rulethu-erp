@@ -84,7 +84,7 @@ export default function MonthlyReportPage() {
       <div className="rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}>
         <iframe
           ref={iframeRef}
-          src="/reports/rulethu-monthly-brief/"
+          src="/reports/rulethu-monthly-brief/?v=3"
           title="Rulethu Monthly Economic Brief template"
           className="w-full"
           style={{ height: "calc(100vh - 120px)", minHeight: 900, border: "none", background: "#fff" }}

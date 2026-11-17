@@ -6,6 +6,16 @@ import type { ResearchReport } from "./seed";
 import type { Attachment } from "./store";
 import { askClaude } from "./aiClient";
 
+// Strip markdown so chat messages read cleanly (no raw ** or # asterisks).
+function stripMd(s: string): string {
+  return s
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/(^|\n)\s*#{1,6}\s*/g, "$1")
+    .replace(/(^|\n)\s*[-*]\s+/g, "$1• ")
+    .replace(/\*/g, "")
+    .trim();
+}
+
 function stripHtml(html: string): string {
   return html
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -28,17 +38,18 @@ export async function aiReportSummary(r: ResearchReport): Promise<string> {
     system:
       "You are Rulethu AI. Summarise a research report for a group-chat announcement " +
       "at an African investment group in Harare. Write a tight, comprehensive-but-short " +
-      "summary: ONE 2-3 sentence overview paragraph, then 3-5 **key takeaways** as bullet " +
-      "points capturing the most important, specific points of the report (not generic " +
-      "section names). Markdown only, no title. Be concrete; don't pad.",
-    prompt: `REPORT CONTENT:\n${reportText(r)}\n\nWrite the summary now.`,
+      "summary: ONE 2-3 sentence overview paragraph, then 3-5 key takeaways, each on its " +
+      "own line starting with '• '. Pull out the REAL, SPECIFIC points — actual index " +
+      "levels, prices, % moves and named events from the report — not generic section " +
+      "names. PLAIN TEXT ONLY: do NOT use markdown, asterisks (**), or '#'. No title.",
+    prompt: `REPORT CONTENT:\n${reportText(r)}\n\nWrite the summary now (plain text, with the actual figures where present).`,
     model: "haiku",
-    maxTokens: 600,
+    maxTokens: 700,
   });
-  if (text) return text;
+  if (text) return stripMd(text);
   // Fallback (no AI): a sensible non-placeholder summary.
   const items = (r.sectors ?? []).slice(0, 5);
-  return `${r.summary}` + (items.length ? `\n\n**Key areas covered:**\n${items.map((s) => `• ${s}`).join("\n")}` : "");
+  return `${r.summary}` + (items.length ? `\n\nKey areas covered:\n${items.map((s) => `• ${s}`).join("\n")}` : "");
 }
 
 /** Full branded HTML for the attachment — the report itself, printable to PDF. */
