@@ -58,14 +58,52 @@ export default function DailyMarketPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [market, busy]);
 
-  const postComment = () => {
-    const t = comment.trim();
-    if (!t) return;
-    add("newsComments", { id: genId("NC"), author: me, text: t, createdAt: new Date().toISOString() });
-    setComment("");
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [aiBusy, setAiBusy] = useState<string | null>(null); // id of the comment the AI is answering
+
+  // Build an AI answer to an @AI-tagged comment, using today's brief + thread.
+  const aiAnswer = async (question: string, parentId: string, threadText: string) => {
+    setAiBusy(parentId);
+    try {
+      const { askClaude } = await import("@/lib/aiClient");
+      const brief = market
+        ? `TODAY'S MARKET BRIEF:\nHeadline: ${market.headline}\nPrices: ${market.prices.map((p) => `${p.name} ${p.value} ${p.change ?? ""}`).join("; ")}\nCommentary: ${market.commentary}\nWatch: ${market.watch.join("; ")}`
+        : "No market brief is loaded.";
+      const text = await askClaude({
+        system: "You are Rulethu AI on the market desk at an African investment group in Harare. A colleague tagged you on the daily market brief. Answer their question clearly and expand/explain, always linking the market moves to the Zimbabwe / SADC and Rulethu context (gold & PGM mining, lithium, solar/PPAs, ZSE/VFEX, ZiG/USD). Be concrete and practical, 1-3 short paragraphs. Plain text — no markdown asterisks.",
+        prompt: `${brief}\n\nThread so far: ${threadText}\n\nColleague's question: ${question}\n\nAnswer:`,
+        model: "haiku",
+        maxTokens: 1000,
+      });
+      add("newsComments", { id: genId("NC"), author: "Rulethu AI", text: text || "I couldn't answer just now — try again in a moment.", createdAt: new Date().toISOString(), parentId, isAI: true });
+    } finally {
+      setAiBusy(null);
+    }
   };
 
-  const comments = [...newsComments].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const AI_TAG = /@(ai|rulethu)\b/i;
+  const post = (raw: string, parentId?: string) => {
+    const t = raw.trim();
+    if (!t) return;
+    const id = genId("NC");
+    add("newsComments", { id, author: me, text: t, createdAt: new Date().toISOString(), parentId });
+    // If they tagged @AI, have the desk assistant reply in-thread.
+    if (AI_TAG.test(t)) {
+      const q = t.replace(AI_TAG, "").trim() || t;
+      aiAnswer(q, id, t);
+    }
+    if (parentId) { setReplyText(""); setReplyTo(null); } else setComment("");
+  };
+
+  const topLevel = newsComments.filter((c) => !c.parentId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const repliesOf = (pid: string) => newsComments.filter((c) => c.parentId === pid).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  const Avatar = ({ c }: { c: { author: string; isAI?: boolean } }) => (
+    <div className="h-8 w-8 rounded-full shrink-0 flex items-center justify-center text-xs font-bold text-white" style={{ background: c.isAI ? "var(--accent)" : "var(--brand)", color: c.isAI ? "#1a1205" : "#fff" }}>
+      {c.isAI ? "✦" : c.author.slice(0, 1).toUpperCase()}
+    </div>
+  );
 
   return (
     <div className="page-enter">
@@ -169,33 +207,67 @@ export default function DailyMarketPage() {
 
       {/* Desk comments / blog */}
       <div className="rounded-xl border p-5" style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}>
-        <h3 className="text-sm font-bold mb-3" style={{ color: "var(--text)" }}>Desk comments</h3>
-        <div className="flex gap-2 mb-4">
+        <h3 className="text-sm font-bold" style={{ color: "var(--text)" }}>Desk comments</h3>
+        <p className="text-[11px] mb-3" style={{ color: "var(--text-faint)" }}>Tip: tag <b style={{ color: "var(--brand)" }}>@AI</b> in a comment to ask the desk assistant to expand or explain — it answers in the thread.</p>
+        <div className="flex gap-2 mb-5">
           <input
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") postComment(); }}
-            placeholder="Add your read on today's market…"
+            onKeyDown={(e) => { if (e.key === "Enter") post(comment); }}
+            placeholder="Add your read… or ask @AI to explain the trends"
             className="flex-1 rounded-md border px-3 py-2 text-sm"
             style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }}
           />
-          <button onClick={postComment} className="rounded-md px-4 py-2 text-sm font-semibold text-white shrink-0" style={{ background: "var(--brand)" }}>Post</button>
+          <button onClick={() => post(comment)} className="rounded-md px-4 py-2 text-sm font-semibold text-white shrink-0" style={{ background: "var(--brand)" }}>Post</button>
         </div>
-        {comments.length === 0 ? (
-          <p className="text-sm" style={{ color: "var(--text-faint)" }}>No comments yet — be the first to share your view with the desk.</p>
+        {topLevel.length === 0 ? (
+          <p className="text-sm" style={{ color: "var(--text-faint)" }}>No comments yet — share your view, or tag @AI to explain today&apos;s market.</p>
         ) : (
-          <ul className="space-y-3">
-            {comments.map((c) => (
-              <li key={c.id} className="flex gap-3">
-                <div className="h-8 w-8 rounded-full shrink-0 flex items-center justify-center text-xs font-bold text-white" style={{ background: "var(--brand)" }}>
-                  {c.author.slice(0, 1).toUpperCase()}
-                </div>
-                <div>
-                  <div className="text-xs" style={{ color: "var(--text-faint)" }}>
-                    <span className="font-semibold" style={{ color: "var(--text)" }}>{c.author}</span> · {timeAgo(c.createdAt)}
+          <ul className="space-y-4">
+            {topLevel.map((c) => (
+              <li key={c.id}>
+                <div className="flex gap-3">
+                  <Avatar c={c} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs" style={{ color: "var(--text-faint)" }}>
+                      <span className="font-semibold" style={{ color: c.isAI ? "var(--brand)" : "var(--text)" }}>{c.author}</span>{c.isAI && <span className="ml-1 rounded px-1 text-[9px] font-bold uppercase" style={{ background: "var(--lz-green-bg)", color: "var(--lz-green-fg)" }}>AI</span>} · {timeAgo(c.createdAt)}
+                    </div>
+                    <div className="text-sm whitespace-pre-line" style={{ color: "var(--text)" }}>{c.text}</div>
+                    <button onClick={() => { setReplyTo(replyTo === c.id ? null : c.id); setReplyText(""); }} className="mt-1 text-[11px] font-medium" style={{ color: "var(--text-faint)" }}>Reply</button>
                   </div>
-                  <div className="text-sm" style={{ color: "var(--text-muted)" }}>{c.text}</div>
                 </div>
+
+                {/* Replies */}
+                {(repliesOf(c.id).length > 0 || aiBusy === c.id || replyTo === c.id) && (
+                  <ul className="mt-2 ml-11 space-y-3 border-l pl-4" style={{ borderColor: "var(--border)" }}>
+                    {repliesOf(c.id).map((r) => (
+                      <li key={r.id} className="flex gap-2.5">
+                        <Avatar c={r} />
+                        <div className="min-w-0">
+                          <div className="text-xs" style={{ color: "var(--text-faint)" }}>
+                            <span className="font-semibold" style={{ color: r.isAI ? "var(--brand)" : "var(--text)" }}>{r.author}</span>{r.isAI && <span className="ml-1 rounded px-1 text-[9px] font-bold uppercase" style={{ background: "var(--lz-green-bg)", color: "var(--lz-green-fg)" }}>AI</span>} · {timeAgo(r.createdAt)}
+                          </div>
+                          <div className="text-sm whitespace-pre-line" style={{ color: "var(--text-muted)" }}>{r.text}</div>
+                        </div>
+                      </li>
+                    ))}
+                    {aiBusy === c.id && <li className="text-xs" style={{ color: "var(--text-faint)" }}>✦ Rulethu AI is thinking…</li>}
+                    {replyTo === c.id && (
+                      <li className="flex gap-2">
+                        <input
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") post(replyText, c.id); }}
+                          autoFocus
+                          placeholder="Reply… (tag @AI to ask the assistant)"
+                          className="flex-1 rounded-md border px-2.5 py-1.5 text-sm"
+                          style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }}
+                        />
+                        <button onClick={() => post(replyText, c.id)} className="rounded-md px-3 py-1.5 text-xs font-semibold text-white shrink-0" style={{ background: "var(--brand)" }}>Reply</button>
+                      </li>
+                    )}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>

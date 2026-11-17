@@ -286,6 +286,8 @@ export interface NewsComment {
   author: string;
   text: string;
   createdAt: string;
+  parentId?: string;   // reply-to a specific comment (threading)
+  isAI?: boolean;      // true when Rulethu AI answered an @AI tag
 }
 
 // Personal workspace (private to each owner) ------------------------------

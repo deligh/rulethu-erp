@@ -7,8 +7,10 @@
 
 import type { MarketSnapshot, MarketPrice, NewsSource } from "./store";
 
-// How stale the shared digest may get before we auto-refresh on a page visit.
-export const REFRESH_HOURS = 2;
+// How stale the shared digest may get before we auto-refresh — the whole brief
+// (prices + commentary) regenerates on this cadence, and on any page visit once
+// it's older than this. "Refresh now" always forces a fresh pull.
+export const REFRESH_HOURS = 3;
 
 export function isStale(snap: MarketSnapshot | null): boolean {
   if (!snap) return true;
