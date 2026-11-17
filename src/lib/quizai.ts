@@ -164,31 +164,41 @@ export type ChatTurn = { role: "user" | "assistant"; content: string };
  * recent events) — not just the built-in library. Also handles personal /
  * follow-up questions naturally. Falls back to the rule-based answer offline.
  */
+const CHAT_SYSTEM =
+  STUDY_SYSTEM +
+  "\n\nYou are in a CONTINUING CONVERSATION — answer follow-ups and personal " +
+  "questions naturally and remember what was said earlier. ALWAYS give a " +
+  "complete answer — never cut off mid-sentence.";
+
+// Questions that need CURRENT / real-world facts → research the web.
+// Conceptual questions (how a DCF works, explain DSCR) are answered instantly.
+const NEEDS_RESEARCH = /\b(top|best|biggest|largest|leading|current|latest|today|now|recent|this (year|month|week)|price|prices|news|who (is|are|owns|runs)|ceo|rank|ranking|listed|how much|net worth|market cap|20\d\d|q[1-4]\s?20\d\d)\b/i;
+
 export async function studyChat(history: ChatTurn[]): Promise<string> {
   const lastUser = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
+  const research = NEEDS_RESEARCH.test(lastUser);
   try {
     const { askClaude } = await import("./aiClient");
-    const text = await askClaude({
-      system:
-        STUDY_SYSTEM +
-        "\n\nYou are in a CONTINUING CONVERSATION — answer follow-ups and personal " +
-        "questions naturally and remember what was said earlier. You CAN use web " +
-        "search to research current facts, names, rankings, prices or recent events " +
-        "when the question needs up-to-date or specific information (search only " +
-        "when it genuinely helps; otherwise answer directly). ALWAYS give a " +
-        "complete answer — never cut off mid-sentence. If you searched, you may " +
-        "mention the sources briefly.",
-      messages: history,
-      webSearch: true,
-      searchMaxUses: 4,
-      maxTokens: 2200,
-      timeoutMs: 90_000,
-    });
-    if (text) return text;
+    // 1) Research path (only when the question needs current facts) — web search.
+    if (research) {
+      const t = await askClaude({
+        system: CHAT_SYSTEM + " Use web search to find accurate, current facts (names, rankings, prices, figures). Be efficient — a couple of searches. Cite sources briefly.",
+        messages: history,
+        webSearch: true,
+        searchMaxUses: 3,
+        maxTokens: 1800,
+        timeoutMs: 75_000,
+      });
+      if (t) return t;
+    }
+    // 2) Fast path (concept questions, and the fallback if research failed) — quick.
+    const t2 = await askClaude({ system: CHAT_SYSTEM, messages: history, model: "haiku", maxTokens: 1400, timeoutMs: 30_000 });
+    if (t2) return t2;
   } catch {
     /* fall through */
   }
-  return studyAnswer(lastUser).text;
+  // Honest fallback — never a misleading canned answer.
+  return "I couldn't reach the AI just now — please try again in a moment.";
 }
 
 export function studyAnswer(question: string): StudyAnswer {

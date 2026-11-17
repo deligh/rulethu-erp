@@ -256,7 +256,7 @@ export default function QuizPage() {
                 {studyBusy && (
                   <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-muted)" }}>
                     <span className="inline-flex gap-1"><span className="h-1.5 w-1.5 rounded-full animate-bounce" style={{ background: "var(--brand)" }} /><span className="h-1.5 w-1.5 rounded-full animate-bounce" style={{ background: "var(--brand)", animationDelay: "120ms" }} /><span className="h-1.5 w-1.5 rounded-full animate-bounce" style={{ background: "var(--brand)", animationDelay: "240ms" }} /></span>
-                    Researching…
+                    Thinking…
                   </div>
                 )}
               </div>
