@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useAppData, genId, CURRENT_USER } from "@/lib/store";
 import { preparePublication } from "@/lib/publish";
 import { useAuth } from "@/lib/auth";
+import { captureTemplateReport } from "@/lib/captureReport";
 import type { ResearchReport } from "@/lib/seed";
 import { PageHeader, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
@@ -21,12 +22,7 @@ export default function MonthlyReportPage() {
 
   const [publishing, setPublishing] = useState(false);
   const publish = async () => {
-    let body: string | undefined;
-    try {
-      const win = iframeRef.current?.contentWindow as unknown as { __getReportHTML?: () => string } | null;
-      const html = win?.__getReportHTML?.();
-      if (html && html.length > 300) body = html;
-    } catch { /* template not ready */ }
+    const body = captureTemplateReport(iframeRef.current, title.trim() || "Rulethu Monthly Economic Brief");
 
     const report: ResearchReport = {
       id: genId("R"),

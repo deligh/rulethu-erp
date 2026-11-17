@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useAppData, genId, CURRENT_USER } from "@/lib/store";
 import { preparePublication } from "@/lib/publish";
+import { captureTemplateReport } from "@/lib/captureReport";
 import type { ResearchReport } from "@/lib/seed";
 import { PageHeader, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
@@ -19,13 +20,7 @@ export default function DailyIntelligencePage() {
 
   const [publishing, setPublishing] = useState(false);
   const publish = async () => {
-    // Capture the REAL filled report from the template (same output as its PDF).
-    let body: string | undefined;
-    try {
-      const win = iframeRef.current?.contentWindow as unknown as { __getReportHTML?: () => string } | null;
-      const html = win?.__getReportHTML?.();
-      if (html && html.length > 300) body = html;
-    } catch { /* template not ready / cross-origin */ }
+    const body = captureTemplateReport(iframeRef.current, title.trim() || "Daily Market Intelligence");
 
     const report: ResearchReport = {
       id: genId("R"),
