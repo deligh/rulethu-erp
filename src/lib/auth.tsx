@@ -226,7 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const passwords = { ...o.passwords }; delete passwords[id];
       const roles = { ...o.roles }; delete roles[id];
       const names = { ...o.names }; delete names[id];
-      const next = { passwords, roles, names, added };
+      const next = { passwords, roles, names, added, audit: o.audit };
       persistOverrides(next); return next;
     });
   }, []);
