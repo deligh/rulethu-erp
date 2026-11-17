@@ -156,6 +156,41 @@ export async function studyAnswerLive(question: string): Promise<StudyAnswer> {
   return studyAnswer(q);
 }
 
+export type ChatTurn = { role: "user" | "assistant"; content: string };
+
+/**
+ * Conversational study/research chat. Multi-turn, remembers the conversation,
+ * and CAN SEARCH THE WEB to research current facts (names, prices, rankings,
+ * recent events) — not just the built-in library. Also handles personal /
+ * follow-up questions naturally. Falls back to the rule-based answer offline.
+ */
+export async function studyChat(history: ChatTurn[]): Promise<string> {
+  const lastUser = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
+  try {
+    const { askClaude } = await import("./aiClient");
+    const text = await askClaude({
+      system:
+        STUDY_SYSTEM +
+        "\n\nYou are in a CONTINUING CONVERSATION — answer follow-ups and personal " +
+        "questions naturally and remember what was said earlier. You CAN use web " +
+        "search to research current facts, names, rankings, prices or recent events " +
+        "when the question needs up-to-date or specific information (search only " +
+        "when it genuinely helps; otherwise answer directly). ALWAYS give a " +
+        "complete answer — never cut off mid-sentence. If you searched, you may " +
+        "mention the sources briefly.",
+      messages: history,
+      webSearch: true,
+      searchMaxUses: 4,
+      maxTokens: 2200,
+      timeoutMs: 90_000,
+    });
+    if (text) return text;
+  } catch {
+    /* fall through */
+  }
+  return studyAnswer(lastUser).text;
+}
+
 export function studyAnswer(question: string): StudyAnswer {
   const q = question.trim().toLowerCase();
   if (!q) return { title: "Ask me anything", text: "Ask about markets, valuation (DCF, IRR, multiples), Zimbabwe/ZSE, SADC, or Rulethu's sectors (solar, mining, lending). Try a topic below.", sources: [] };

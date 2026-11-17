@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useAppData, genId, CURRENT_USER, QuizScore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
-import { studyAnswer, studyAnswerLive, STUDY_TOPICS, StudyAnswer } from "@/lib/quizai";
+import { studyAnswer, studyChat, STUDY_TOPICS } from "@/lib/quizai";
 import { PageHeader, Card, Badge, SectionTitle } from "@/components/ui";
 import Avatar from "@/components/Avatar";
 
@@ -74,16 +74,21 @@ export default function QuizPage() {
   const { user } = useAuth();
   const me = user?.name ?? CURRENT_USER;
   const [studyQ, setStudyQ] = useState("");
-  const [studyA, setStudyA] = useState<StudyAnswer | null>(null);
+  const [studyMsgs, setStudyMsgs] = useState<{ role: "user" | "ai"; text: string }[]>([]);
   const [studyBusy, setStudyBusy] = useState(false);
   const askStudy = async (q: string) => {
-    if (!q.trim()) return;
-    setStudyQ(q); setStudyBusy(true); setStudyA(null);
+    const question = q.trim();
+    if (!question || studyBusy) return;
+    setStudyQ("");
+    const nextMsgs = [...studyMsgs, { role: "user" as const, text: question }];
+    setStudyMsgs(nextMsgs);
+    setStudyBusy(true);
     try {
-      const ans = await studyAnswerLive(q);
-      setStudyA(ans);
+      const history = nextMsgs.map((m) => ({ role: m.role === "ai" ? ("assistant" as const) : ("user" as const), content: m.text }));
+      const ans = await studyChat(history);
+      setStudyMsgs((m) => [...m, { role: "ai", text: ans }]);
     } catch {
-      setStudyA(studyAnswer(q));
+      setStudyMsgs((m) => [...m, { role: "ai", text: studyAnswer(question).text }]);
     } finally {
       setStudyBusy(false);
     }
@@ -219,43 +224,56 @@ export default function QuizPage() {
 
       {/* Study & Ask AI — the learning resource */}
       <div className="mt-8">
-        <SectionTitle hint="demo now · full Claude study when the API key is connected">Study &amp; Ask AI</SectionTitle>
+        <SectionTitle hint="live AI · researches the web · remembers the conversation">Study &amp; Ask AI</SectionTitle>
         <div className="grid lg:grid-cols-[1fr_280px] gap-6 items-start">
           <Card>
             <div className="flex items-center gap-2 mb-3">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--brand)" }}><path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2z" /></svg>
-              <h3 className="font-semibold" style={{ color: "var(--text)" }}>Ask anything — a learning resource</h3>
+              <h3 className="font-semibold" style={{ color: "var(--text)" }}>Ask anything — your AI research tutor</h3>
+              {studyMsgs.length > 0 && (
+                <button onClick={() => setStudyMsgs([])} className="ml-auto text-[11px] font-medium" style={{ color: "var(--text-faint)" }}>Clear chat</button>
+              )}
             </div>
-            <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>Ask about today&apos;s quiz, markets, valuation, Zimbabwe/ZSE, SADC, or Rulethu&apos;s sectors — and go deeper than the quiz.</p>
-            <div className="flex gap-2">
-              <input value={studyQ} onChange={(e) => setStudyQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") askStudy(studyQ); }} placeholder="e.g. How does a DCF work? What is the ZSE? Explain DSCR." className="flex-1 rounded-md border px-3 py-2 text-sm" style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }} />
-              <button onClick={() => askStudy(studyQ)} className="rounded-md px-4 py-2 text-sm font-semibold text-white shrink-0" style={{ background: "var(--brand)" }}>Ask</button>
-            </div>
-            <div className="flex flex-wrap gap-1.5 mt-2.5">
-              {STUDY_TOPICS.map((t) => (
-                <button key={t.id} onClick={() => askStudy(t.title)} className="rounded-full border px-2.5 py-1 text-[11px] font-medium" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>{t.title}</button>
-              ))}
-            </div>
-            {studyBusy && (
-              <div className="mt-4 flex items-center gap-2 text-sm" style={{ color: "var(--text-muted)" }}>
-                <span className="inline-flex gap-1"><span className="h-1.5 w-1.5 rounded-full animate-bounce" style={{ background: "var(--brand)" }} /><span className="h-1.5 w-1.5 rounded-full animate-bounce" style={{ background: "var(--brand)", animationDelay: "120ms" }} /><span className="h-1.5 w-1.5 rounded-full animate-bounce" style={{ background: "var(--brand)", animationDelay: "240ms" }} /></span>
-                Studying…
-              </div>
-            )}
-            {studyA && !studyBusy && (
-              <div className="mt-4 rounded-lg border p-3.5" style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}>
-                <div className="font-semibold text-sm mb-1" style={{ color: "var(--text)" }}>{studyA.title}</div>
-                <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}><Bold text={studyA.text} /></p>
-                {studyA.sources.length > 0 && (
-                  <div className="mt-2.5 flex flex-wrap gap-2">
-                    {studyA.sources.map((s) => (
-                      <Link key={s.href} href={s.href} className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium" style={{ borderColor: "var(--border)", color: "var(--brand)", background: "var(--surface)" }}>{s.label} ↗</Link>
-                    ))}
+            <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>A real chat — ask about markets, valuation, Zimbabwe/ZSE, SADC, Rulethu&apos;s sectors, or anything else. It <b>researches the web</b> for current facts and <b>remembers the conversation</b>, so you can keep asking follow-ups.</p>
+
+            {/* Conversation */}
+            {studyMsgs.length > 0 && (
+              <div className="mb-3 space-y-3 max-h-[46vh] overflow-y-auto pr-1">
+                {studyMsgs.map((m, i) => (
+                  m.role === "user" ? (
+                    <div key={i} className="flex justify-end">
+                      <div className="rounded-2xl rounded-br-sm px-3.5 py-2 text-sm max-w-[85%] text-white" style={{ background: "var(--brand)" }}>{m.text}</div>
+                    </div>
+                  ) : (
+                    <div key={i} className="flex gap-2.5">
+                      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--surface-2)" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ color: "var(--brand)" }}><path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2z" /></svg>
+                      </span>
+                      <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-sm leading-relaxed max-w-[88%] whitespace-pre-line" style={{ background: "var(--surface-2)", color: "var(--text)" }}><Bold text={m.text} /></div>
+                    </div>
+                  )
+                ))}
+                {studyBusy && (
+                  <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-muted)" }}>
+                    <span className="inline-flex gap-1"><span className="h-1.5 w-1.5 rounded-full animate-bounce" style={{ background: "var(--brand)" }} /><span className="h-1.5 w-1.5 rounded-full animate-bounce" style={{ background: "var(--brand)", animationDelay: "120ms" }} /><span className="h-1.5 w-1.5 rounded-full animate-bounce" style={{ background: "var(--brand)", animationDelay: "240ms" }} /></span>
+                    Researching…
                   </div>
                 )}
               </div>
             )}
-            <p className="mt-3 text-[11px]" style={{ color: "var(--text-faint)" }}>Demo mode — answers come from a built-in library. Connect the Claude API key and this becomes a full tutor that pulls in the platform&apos;s live data and can do deep, multi-step study.</p>
+
+            <div className="flex gap-2">
+              <input value={studyQ} onChange={(e) => setStudyQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") askStudy(studyQ); }} placeholder={studyMsgs.length ? "Ask a follow-up…" : "e.g. Who are the top asset managers in Zimbabwe? Explain DSCR."} className="flex-1 rounded-md border px-3 py-2 text-sm" style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }} />
+              <button onClick={() => askStudy(studyQ)} disabled={studyBusy} className="rounded-md px-4 py-2 text-sm font-semibold text-white shrink-0 disabled:opacity-60" style={{ background: "var(--brand)" }}>{studyBusy ? "…" : "Send"}</button>
+            </div>
+            {studyMsgs.length === 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                {STUDY_TOPICS.map((t) => (
+                  <button key={t.id} onClick={() => askStudy(t.title)} className="rounded-full border px-2.5 py-1 text-[11px] font-medium" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>{t.title}</button>
+                ))}
+              </div>
+            )}
+            <p className="mt-3 text-[11px]" style={{ color: "var(--text-faint)" }}>Powered by live Claude AI with web research. It can take a few seconds when it looks something up.</p>
           </Card>
 
           <Card>
