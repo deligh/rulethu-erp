@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAppData, genId, CURRENT_USER } from "@/lib/store";
 import { preparePublication } from "@/lib/publish";
 import { useAuth } from "@/lib/auth";
@@ -17,9 +17,17 @@ export default function MonthlyReportPage() {
   const { user } = useAuth();
   const [title, setTitle] = useState(`Rulethu Monthly Economic Brief — ${monthLabel()}`);
   const [published, setPublished] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const [publishing, setPublishing] = useState(false);
   const publish = async () => {
+    let body: string | undefined;
+    try {
+      const win = iframeRef.current?.contentWindow as unknown as { __getReportHTML?: () => string } | null;
+      const html = win?.__getReportHTML?.();
+      if (html && html.length > 300) body = html;
+    } catch { /* template not ready */ }
+
     const report: ResearchReport = {
       id: genId("R"),
       title: title.trim() || "Rulethu Monthly Economic Brief",
@@ -29,6 +37,7 @@ export default function MonthlyReportPage() {
       status: "Published",
       summary: "Monthly economic brief — macro, FX, rates, equities, commodities and the Rulethu house view, from the RMR template.",
       sectors: ["Macro", "FX", "Rates", "Equities", "Commodities"],
+      body,
     };
     setPublishing(true);
     try { publishReport(report, await preparePublication(report)); }
@@ -74,6 +83,7 @@ export default function MonthlyReportPage() {
       {/* Embedded RMR template, exactly as-is */}
       <div className="rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}>
         <iframe
+          ref={iframeRef}
           src="/reports/rulethu-monthly-brief/"
           title="Rulethu Monthly Economic Brief template"
           className="w-full"

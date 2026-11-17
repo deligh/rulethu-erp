@@ -399,7 +399,7 @@ function peerCard(label,val,chg){
   return'<div class="peer-card"><div class="pl">'+label+'</div><div class="pv">'+(val||'\u2014')+'</div><div class="pc" style="color:'+co+'">'+(chg?pc(chg)+aw(chg):'\u2014')+'</div></div>';
 }
 
-function dl(){
+function __buildReportHTML(){
   bR();
   var c=document.getElementById('rO').innerHTML;
   var dt=$('d');
@@ -407,10 +407,15 @@ function dl(){
   var hdr='<div style="display:flex;align-items:center;gap:8px;border-bottom:2px solid #166534;padding-bottom:5px">'+logoImg+'<div><span style="font-weight:700;font-size:10px;color:#888;font-family:Segoe UI,sans-serif">| RESEARCH</span><br><span style="font-size:8px;color:#aaa;font-style:italic">Daily Market Intelligence</span></div></div>';
   var ftr='<div style="display:flex;justify-content:space-between;font-size:7px;color:#aaa;border-top:1px solid #e5e7eb;padding-top:3px"><span>info@rulethu.com | +263 8677010018 | rulethu.com</span><span>Rulethu &amp; Co. Private Limited</span></div>';
   var css=document.querySelector('style').textContent;
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Rulethu DMI \u2013 '+fD(dt)+'</title><style>'+css+' body{font-family:Georgia,Times New Roman,serif;color:#222;line-height:1.5;font-size:10px;background:#fff;padding:0 9mm} table.pw{width:100%} thead.ph2{display:table-header-group} tfoot.pf2{display:table-footer-group} thead.ph2 td{padding:5mm 0 3mm 0} tfoot.pf2 td{padding:3mm 0 4mm 0} .ab{display:none} .rh{display:none} .rs{page-break-inside:auto;break-inside:auto} .tt,svg,.ib,.peer-row,.cal-box{page-break-inside:avoid;break-inside:avoid} @media print{body{padding:0 9mm}@page{size:A4;margin:0}}</style></head><body>'+
+  '<table class="pw"><thead class="ph2"><tr><td>'+hdr+'</td></tr></thead><tfoot class="pf2"><tr><td>'+ftr+'</td></tr></tfoot><tbody><tr><td class="rp">'+c+'</td></tr></tbody></table></body></html>';
+}
+/* Exposed so the ERP can capture the real, filled report when publishing. */
+window.__getReportHTML=__buildReportHTML;
+function dl(){
   var w=window.open('','_blank');
   if(!w){alert('Allow popups to download PDF');return;}
-  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Rulethu DMI \u2013 '+fD(dt)+'</title><style>'+css+' body{font-family:Georgia,Times New Roman,serif;color:#222;line-height:1.5;font-size:10px;background:#fff;padding:0 9mm} table.pw{width:100%} thead.ph2{display:table-header-group} tfoot.pf2{display:table-footer-group} thead.ph2 td{padding:5mm 0 3mm 0} tfoot.pf2 td{padding:3mm 0 4mm 0} .ab{display:none} .rh{display:none} .rs{page-break-inside:auto;break-inside:auto} .tt,svg,.ib,.peer-row,.cal-box{page-break-inside:avoid;break-inside:avoid} @media print{body{padding:0 9mm}@page{size:A4;margin:0}}</style></head><body>'+
-  '<table class="pw"><thead class="ph2"><tr><td>'+hdr+'</td></tr></thead><tfoot class="pf2"><tr><td>'+ftr+'</td></tr></tfoot><tbody><tr><td class="rp">'+c+'</td></tr></tbody></table></body></html>');
+  w.document.write(__buildReportHTML());
   w.document.close();
   setTimeout(function(){w.print();},700);
 }

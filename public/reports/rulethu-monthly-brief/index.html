@@ -615,6 +615,8 @@ function printDoc(){
  '<table class="pw"><thead class="ph"><tr><td>'+hdrHtml()+'</td></tr></thead><tfoot class="pf"><tr><td>'+ftrHtml()+'</td></tr></tfoot><tbody><tr><td class="rp">'+buildReport()+'</td></tr></tbody></table></body></html>';
 }
 function printPdf(){var w=window.open('','_blank');if(!w){alert('Please allow pop-ups to download the PDF.');return;}w.document.write(printDoc());w.document.close();setTimeout(function(){w.print();},700);}
+/* Exposed so the ERP can capture the real, filled report when publishing. */
+window.__getReportHTML=printDoc;
 
 /* ───────── SAVE / LOAD / ROLL ───────── */
 function saveJson(){var b=new Blob([JSON.stringify(D,null,1)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='rulethu_monthly_'+D.meta.month+'.json';document.body.appendChild(a);a.click();a.remove();}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAppData, genId, CURRENT_USER } from "@/lib/store";
 import { preparePublication } from "@/lib/publish";
 import type { ResearchReport } from "@/lib/seed";
@@ -15,9 +15,18 @@ export default function DailyIntelligencePage() {
   const { publishReport } = useAppData();
   const [title, setTitle] = useState(`Daily Market Intelligence — ${todayLabel()}`);
   const [published, setPublished] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const [publishing, setPublishing] = useState(false);
   const publish = async () => {
+    // Capture the REAL filled report from the template (same output as its PDF).
+    let body: string | undefined;
+    try {
+      const win = iframeRef.current?.contentWindow as unknown as { __getReportHTML?: () => string } | null;
+      const html = win?.__getReportHTML?.();
+      if (html && html.length > 300) body = html;
+    } catch { /* template not ready / cross-origin */ }
+
     const report: ResearchReport = {
       id: genId("R"),
       title: title.trim() || "Daily Market Intelligence",
@@ -27,6 +36,7 @@ export default function DailyIntelligencePage() {
       status: "Published",
       summary: "Daily market intelligence — local & international markets, produced in the Research desk template.",
       sectors: ["FX", "Equities", "Commodities", "Fixed Income"],
+      body,
     };
     setPublishing(true);
     try {
@@ -77,6 +87,7 @@ export default function DailyIntelligencePage() {
       {/* Embedded template, exactly as-is */}
       <div className="rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}>
         <iframe
+          ref={iframeRef}
           src="/reports/daily-market-intelligence/"
           title="Daily Market Intelligence template"
           className="w-full"
