@@ -6,6 +6,7 @@ import type { ResearchReport } from "@/lib/seed";
 import { PageHeader, Card, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
 import { askClaude } from "@/lib/aiClient";
+import { preparePublication } from "@/lib/publish";
 
 type Sentiment = "Positive" | "Neutral" | "Negative";
 interface SectorInput {
@@ -221,7 +222,8 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
     setTimeout(() => w.print(), 500);
   };
 
-  const publish = () => {
+  const [publishing, setPublishing] = useState(false);
+  const publish = async () => {
     if (filledCount === 0) { alert("Complete at least one sector before publishing."); return; }
     const report: ResearchReport = {
       id: genId("R"),
@@ -234,7 +236,10 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
       sectors: sectors.filter((s) => s.highlight.trim() || s.commentary.trim()).map((s) => s.name),
       body: html,
     };
-    publishReport(report);
+    setPublishing(true);
+    try { publishReport(report, await preparePublication(report)); }
+    catch { publishReport(report); }
+    finally { setPublishing(false); }
     setPublished(true);
     setTimeout(() => setPublished(false), 3000);
   };
@@ -252,7 +257,7 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
               {aiBusy ? "Consolidating…" : "✨ Draft with AI"}
             </button>
             <button onClick={download} className="rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>⬇ Download PDF</button>
-            <button onClick={publish} className="rounded-md px-4 py-2 text-sm font-semibold text-white" style={{ background: "var(--brand)" }}>Publish to group</button>
+            <button onClick={publish} disabled={publishing} className="rounded-md px-4 py-2 text-sm font-semibold text-white disabled:opacity-60" style={{ background: "var(--brand)" }}>{publishing ? "Publishing…" : "Publish to group"}</button>
           </div>
         }
       />

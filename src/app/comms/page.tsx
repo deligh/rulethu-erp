@@ -365,9 +365,29 @@ export default function CommsPage() {
                         <div className="text-sm font-medium truncate" style={{ color: "var(--text)" }}>{m.attachment.name}</div>
                         <div className="text-[11px]" style={{ color: "var(--text-faint)" }}>{fmtBytes(m.attachment.size)}</div>
                       </div>
-                      <a href={m.attachment.dataUrl} download={m.attachment.name} className="ml-auto rounded-md px-2.5 py-1.5 text-xs font-medium text-white shrink-0" style={{ background: "var(--brand)" }}>
-                        Download
-                      </a>
+                      <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                        {!m.attachment.type.startsWith("image/") && (
+                          <button
+                            onClick={() => {
+                              const du = m.attachment!.dataUrl;
+                              let htmlStr = "";
+                              try {
+                                const payload = du.split(",").slice(1).join(",");
+                                htmlStr = du.includes(";base64,") ? decodeURIComponent(escape(atob(payload))) : decodeURIComponent(payload);
+                              } catch { htmlStr = ""; }
+                              const w = window.open("", "_blank");
+                              if (w && htmlStr) { w.document.write(htmlStr); w.document.close(); }
+                            }}
+                            className="rounded-md border px-2.5 py-1.5 text-xs font-medium"
+                            style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                          >
+                            Open
+                          </button>
+                        )}
+                        <a href={m.attachment.dataUrl} download={m.attachment.name} className="rounded-md px-2.5 py-1.5 text-xs font-medium text-white" style={{ background: "var(--brand)" }}>
+                          Download
+                        </a>
+                      </div>
                     </div>
                   )}
                 </div>

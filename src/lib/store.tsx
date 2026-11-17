@@ -475,7 +475,7 @@ interface Ctx extends AppData {
   fulfilRequest: (id: string, resolvedBy: string, note?: string) => void;
   setRequestStatus: (id: string, status: RequestStatus, resolvedBy?: string, note?: string) => void;
   // research
-  publishReport: (report: ResearchReport) => void;
+  publishReport: (report: ResearchReport, opts?: { summary?: string; attachment?: Attachment }) => void;
   // market news feed
   setMarket: (snap: MarketSnapshot) => void;
   // generic collection ops
@@ -671,19 +671,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   // Publish a research report → one place that (1) stores it, (2) notifies
   // everyone with a CLICKABLE link to open it, and (3) posts a concise summary
   // to the group comms channel so the whole team sees the update, on point.
-  const publishReport: Ctx["publishReport"] = useCallback((report) => {
+  const publishReport: Ctx["publishReport"] = useCallback((report, opts) => {
     setData((d) => {
-      const keyItems = (report.sectors ?? []).slice(0, 6);
-      const summaryLine = report.summary?.trim() || `${report.type} for ${report.date}.`;
+      const summaryBlock = opts?.summary?.trim()
+        || report.summary?.trim()
+        || `${report.type} for ${report.date}.`;
       const msgText =
         `📊 **${report.title}** — just published to the group.\n\n` +
-        `**Summary:** ${summaryLine}` +
-        (keyItems.length ? `\n\n**Key items:**\n${keyItems.map((s) => `• ${s}`).join("\n")}` : "") +
-        `\n\n_Open the full report in Research → Library._`;
+        summaryBlock +
+        `\n\n_Full report attached — open it to read or save as PDF, or find it in Research → Library._`;
       const groupChannel = d.channels.some((c) => c.id === "announcements") ? "announcements" : (d.channels[0]?.id ?? "general");
       const msg: ChatMessage = {
         id: uid("MSG"), channelId: groupChannel, author: report.author,
-        kind: "message", text: msgText, createdAt: new Date().toISOString(),
+        kind: "message", text: msgText, attachment: opts?.attachment, createdAt: new Date().toISOString(),
       };
       const note: AppNotification = {
         id: uid("N"), title: `${report.type} published`, body: report.title,

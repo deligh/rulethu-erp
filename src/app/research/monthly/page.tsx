@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAppData, genId, CURRENT_USER } from "@/lib/store";
+import { preparePublication } from "@/lib/publish";
 import { useAuth } from "@/lib/auth";
 import type { ResearchReport } from "@/lib/seed";
 import { PageHeader, Badge } from "@/components/ui";
@@ -17,7 +18,8 @@ export default function MonthlyReportPage() {
   const [title, setTitle] = useState(`Rulethu Monthly Economic Brief — ${monthLabel()}`);
   const [published, setPublished] = useState(false);
 
-  const publish = () => {
+  const [publishing, setPublishing] = useState(false);
+  const publish = async () => {
     const report: ResearchReport = {
       id: genId("R"),
       title: title.trim() || "Rulethu Monthly Economic Brief",
@@ -28,7 +30,10 @@ export default function MonthlyReportPage() {
       summary: "Monthly economic brief — macro, FX, rates, equities, commodities and the Rulethu house view, from the RMR template.",
       sectors: ["Macro", "FX", "Rates", "Equities", "Commodities"],
     };
-    publishReport(report);
+    setPublishing(true);
+    try { publishReport(report, await preparePublication(report)); }
+    catch { publishReport(report); }
+    finally { setPublishing(false); }
     setPublished(true);
     setTimeout(() => setPublished(false), 3000);
   };
@@ -53,8 +58,8 @@ export default function MonthlyReportPage() {
             style={{ background: "var(--surface-2)", borderColor: "var(--border)" }}
           />
         </div>
-        <button onClick={publish} className="rounded-md px-4 py-2 text-sm font-semibold text-white self-end" style={{ background: "var(--brand)" }}>
-          Publish to group
+        <button onClick={publish} disabled={publishing} className="rounded-md px-4 py-2 text-sm font-semibold text-white self-end disabled:opacity-60" style={{ background: "var(--brand)" }}>
+          {publishing ? "Publishing…" : "Publish to group"}
         </button>
         {published && <Badge tone="pos">Published — everyone notified</Badge>}
         <a href="/reports/rulethu-monthly-brief/" target="_blank" rel="noopener" className="self-end rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>

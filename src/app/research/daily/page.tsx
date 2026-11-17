@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAppData, genId, CURRENT_USER } from "@/lib/store";
+import { preparePublication } from "@/lib/publish";
 import type { ResearchReport } from "@/lib/seed";
 import { PageHeader, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
@@ -15,7 +16,8 @@ export default function DailyIntelligencePage() {
   const [title, setTitle] = useState(`Daily Market Intelligence — ${todayLabel()}`);
   const [published, setPublished] = useState(false);
 
-  const publish = () => {
+  const [publishing, setPublishing] = useState(false);
+  const publish = async () => {
     const report: ResearchReport = {
       id: genId("R"),
       title: title.trim() || "Daily Market Intelligence",
@@ -26,7 +28,15 @@ export default function DailyIntelligencePage() {
       summary: "Daily market intelligence — local & international markets, produced in the Research desk template.",
       sectors: ["FX", "Equities", "Commodities", "Fixed Income"],
     };
-    publishReport(report);
+    setPublishing(true);
+    try {
+      const extra = await preparePublication(report);
+      publishReport(report, extra);
+    } catch {
+      publishReport(report);
+    } finally {
+      setPublishing(false);
+    }
     setPublished(true);
     setTimeout(() => setPublished(false), 3000);
   };
@@ -51,8 +61,8 @@ export default function DailyIntelligencePage() {
             style={{ background: "var(--surface-2)", borderColor: "var(--border)" }}
           />
         </div>
-        <button onClick={publish} className="rounded-md px-4 py-2 text-sm font-semibold text-white self-end" style={{ background: "var(--brand)" }}>
-          Publish to group
+        <button onClick={publish} disabled={publishing} className="rounded-md px-4 py-2 text-sm font-semibold text-white self-end disabled:opacity-60" style={{ background: "var(--brand)" }}>
+          {publishing ? "Publishing…" : "Publish to group"}
         </button>
         {published && <Badge tone="pos">Published — everyone notified</Badge>}
         <a href="/reports/daily-market-intelligence/" target="_blank" rel="noopener" className="self-end rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>

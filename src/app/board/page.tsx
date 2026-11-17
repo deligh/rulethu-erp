@@ -66,6 +66,9 @@ export default function BoardPage() {
         subtitle="A live shared canvas — drop sticky notes, brainstorm and map ideas with the group. Drag to move; everyone sees updates."
         actions={
           <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>
+              <span className="h-2 w-2 rounded-full" style={{ background: "var(--pos)" }} /> Live · shared with the group
+            </span>
             <Badge tone="live">{boardNotes.length} notes</Badge>
             <div className="flex items-center gap-1">
               {COLORS.map((c) => (

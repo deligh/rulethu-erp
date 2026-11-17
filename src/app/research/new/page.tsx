@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageHeader, Card, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
 import { useAppData, genId } from "@/lib/store";
+import { preparePublication } from "@/lib/publish";
 import type { ResearchReport } from "@/lib/seed";
 
 interface Metric {
@@ -19,6 +20,7 @@ const TODAY = new Date().toISOString().slice(0, 10);
 
 export default function ReportComposer() {
   const { publishReport } = useAppData();
+  const [publishing, setPublishing] = useState(false);
   const [type, setType] = useState("Daily Market Report");
   const [date, setDate] = useState(TODAY);
   const [author, setAuthor] = useState("Delight");
@@ -174,7 +176,7 @@ export default function ReportComposer() {
         <div className="lg:sticky lg:top-20 space-y-3">
           <div className="flex items-center gap-2 no-print">
             <button
-              onClick={() => {
+              onClick={async () => {
                 const report: ResearchReport = {
                   id: genId("R"),
                   title,
@@ -185,13 +187,17 @@ export default function ReportComposer() {
                   summary: headline,
                   sectors,
                 };
-                publishReport(report);
+                setPublishing(true);
+                try { publishReport(report, await preparePublication(report)); }
+                catch { publishReport(report); }
+                finally { setPublishing(false); }
                 setPublished(true);
               }}
-              className="rounded-lg px-3 py-2 text-sm font-medium text-white"
+              disabled={publishing}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
               style={{ background: "var(--brand)" }}
             >
-              Publish to group
+              {publishing ? "Publishing…" : "Publish to group"}
             </button>
             <button onClick={download} className="rounded-lg border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
               Download .md
