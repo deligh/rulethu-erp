@@ -60,17 +60,20 @@ export default function ChatBot() {
   }]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const snap: AiSnapshot = useMemo(() => ({
+  const snap: AiSnapshot = useMemo(() => {
+    const empName = new Map(data.employees.map((e) => [e.id, e.name]));
+    return {
     deals: data.deals.map((d) => ({ name: d.name, stage: d.stage, ticket: d.ticket, sector: d.sector })),
     loans: data.loans.map((l) => ({ borrower: l.borrower, principal: l.principal, status: l.status })),
     tbills: data.tbills.map((t) => ({ client: t.client, reference: t.reference, maturityDate: t.maturityDate, faceValue: t.faceValue })),
     employees: data.employees.map((e) => ({ name: e.name, role: e.role, department: e.department, status: e.status })),
-    tasks: data.tasks.map((t) => ({ title: t.title, status: (t as { status?: string }).status })),
+    tasks: data.tasks.map((t) => ({ title: t.title, status: t.status, assignee: empName.get(t.assigneeId) ?? t.assigneeId, priority: t.priority, module: t.module })),
     leave: data.leave.map((l) => ({ employee: l.employee, type: l.type, status: l.status })),
     reports: data.reports.map((r) => ({ title: r.title })),
     ledger: data.entries.reduce((a, e) => { for (const l of e.lines) { a.debit += l.debit || 0; a.credit += l.credit || 0; } return a; }, { debit: 0, credit: 0 }),
     checks: runChecks({ entries: data.entries, pos: data.pos, requisitions: data.requisitions, requests: data.requests, tbills: data.tbills, loans: data.loans, leave: data.leave, employees: data.employees, deals: data.deals, goals: data.goals }),
-  }), [data]);
+    };
+  }, [data]);
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [msgs, thinking, open]);
 
@@ -107,7 +110,8 @@ export default function ChatBot() {
           ? { agent: "Rulethu AI", text: `Here’s what’s coming up for you, ${user.name}:\n\n${up.map((e) => `• **${e.date}** — ${e.label}`).join("\n")}`, sources: [{ label: "Open my calendar", href: "/calendar", module: "Calendar", keywords: "" }] }
           : { agent: "Rulethu AI", text: `You’ve nothing on your personal calendar yet. Tell me “add … to my calendar” and I’ll schedule it, or add one on the Calendar.`, sources: [{ label: "Open my calendar", href: "/calendar", module: "Calendar", keywords: "" }] };
       } else {
-        a = await answerQueryLive(text, snap);
+        const history = msgs.filter((m) => m.id !== "welcome").map((m) => ({ role: m.role === "ai" ? ("assistant" as const) : ("user" as const), content: m.text }));
+        a = await answerQueryLive(text, snap, history);
       }
       setMsgs((m) => [...m, { id: `a${Date.now()}`, role: "ai", text: a.text, agent: a.agent, sources: a.sources }]);
       setThinking(false);
@@ -140,7 +144,7 @@ export default function ChatBot() {
               </span>
               <div className="leading-tight">
                 <div className="text-sm font-semibold">Talk to Rulethu</div>
-                <div className="text-[10px] opacity-85">AI assistant · demo mode</div>
+                <div className="text-[10px] opacity-85">AI assistant · knows your live data</div>
               </div>
             </div>
             <button onClick={() => setOpen(false)} className="text-white/80 hover:text-white text-lg leading-none">✕</button>

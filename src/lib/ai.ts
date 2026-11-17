@@ -169,7 +169,7 @@ export interface AiSnapshot {
   loans: { borrower: string; principal: number; status: string }[];
   tbills: { client: string; reference: string; maturityDate: string; faceValue: number }[];
   employees: { name: string; role: string; department: string; status: string }[];
-  tasks: { title: string; status?: string }[];
+  tasks: { title: string; status?: string; assignee?: string; priority?: string; module?: string }[];
   leave: { employee: string; type: string; status: string }[];
   reports: { title: string }[];
   ledger: { debit: number; credit: number };
@@ -386,19 +386,43 @@ const ASSISTANT_SYSTEM =
   "**bold** for key figures and short bullet lists where they help. Be specific " +
   "to Rulethu and the Zimbabwe/SADC context. If asked where something lives, name " +
   "the module and the path. Never invent data that isn't in the snapshot — if a " +
-  "number isn't there, say what's needed to get it, rather than guessing.";
+  "number isn't there, say what's needed to get it, rather than guessing.\n" +
+  "WORKLOAD & TASK ALLOCATION: the snapshot includes `team` — each person's " +
+  "department, role, current open-task count and what they're working on, and whether " +
+  "they're on leave. Use it to answer workload questions precisely (who is busiest, " +
+  "capacity per person, the split across the team). When asked who should do a piece of " +
+  "work or who to assign a task to, give a clear RANKED shortlist (1, 2, 3) with a " +
+  "one-line reason each — weigh (a) department/role fit, (b) current open-task load " +
+  "(prefer people with spare capacity), and (c) availability (skip or flag anyone on " +
+  "leave). Be decisive and practical, like a good chief of staff.";
 
 function compactSnapshot(snap: AiSnapshot): string {
+  // Per-person workload (for staffing / allocation questions).
+  const load: Record<string, { open: number; done: number; openTitles: string[] }> = {};
+  for (const t of snap.tasks) {
+    const who = t.assignee || "Unassigned";
+    (load[who] ??= { open: 0, done: 0, openTitles: [] });
+    if ((t.status || "").toLowerCase() === "done") load[who].done += 1;
+    else { load[who].open += 1; if (load[who].openTitles.length < 4) load[who].openTitles.push(t.title); }
+  }
+  const people = snap.employees.map((e) => ({
+    name: e.name, dept: e.department, role: e.role,
+    onLeave: e.status === "On Leave",
+    openTasks: load[e.name]?.open ?? 0,
+    doneTasks: load[e.name]?.done ?? 0,
+    working: load[e.name]?.openTitles ?? [],
+  }));
   // Keep it small (cost) — summaries, not full rows.
   const sum = {
     deals: snap.deals.map((d) => ({ name: d.name, stage: d.stage, ticket: d.ticket, sector: d.sector })),
     loans: { count: snap.loans.length, atRisk: snap.loans.filter((l) => l.status === "PAR>30").map((l) => l.borrower), book: snap.loans.reduce((s, l) => s + l.principal, 0) },
     tbills: { count: snap.tbills.length, face: snap.tbills.reduce((s, t) => s + t.faceValue, 0), next: [...snap.tbills].sort((a, b) => a.maturityDate.localeCompare(b.maturityDate))[0] ?? null },
-    employees: { count: snap.employees.length, onLeave: snap.employees.filter((e) => e.status === "On Leave").map((e) => e.name) },
+    team: people,
+    workloadNote: "openTasks = tasks assigned and not done; prefer people with fewer open tasks and skip/flag anyone onLeave when recommending assignments.",
     leavePending: snap.leave.filter((l) => l.status === "Pending").length,
     reports: snap.reports.length,
     ledger: snap.ledger,
-    tasks: snap.tasks.length,
+    taskTotal: snap.tasks.length,
     checks: (snap.checks ?? []).slice(0, 8).map((c) => ({ module: c.moduleName, sev: c.severity, title: c.title, detail: c.detail })),
   };
   return JSON.stringify(sum);
@@ -409,16 +433,20 @@ function compactSnapshot(snap: AiSnapshot): string {
  * with the live snapshot as context; falls back to the deterministic
  * `answerQuery` if the proxy isn't available. UI shape is identical.
  */
-export async function answerQueryLive(query: string, snap: AiSnapshot): Promise<AiAnswer> {
+export async function answerQueryLive(query: string, snap: AiSnapshot, history?: { role: "user" | "assistant"; content: string }[]): Promise<AiAnswer> {
   const q = query.trim();
   if (!q) return answerQuery(q, snap);
   try {
     const { askClaude } = await import("./aiClient");
+    const current = `LIVE SNAPSHOT (JSON):\n${compactSnapshot(snap)}\n\nQuestion: ${q}`;
+    const messages = history && history.length
+      ? [...history.slice(-8), { role: "user" as const, content: current }]
+      : [{ role: "user" as const, content: current }];
     const text = await askClaude({
-      system: ASSISTANT_SYSTEM,
-      prompt: `LIVE SNAPSHOT (JSON):\n${compactSnapshot(snap)}\n\nQuestion: ${q}`,
+      system: ASSISTANT_SYSTEM + " You are in a continuing conversation — remember what was said and answer follow-ups naturally.",
+      messages,
       model: "sonnet",
-      maxTokens: 1600,
+      maxTokens: 1800,
     });
     if (text) {
       // Keep the deterministic engine's deep-link sources for navigation.

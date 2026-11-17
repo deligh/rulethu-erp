@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAppData, genId, CURRENT_USER, QuizScore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
@@ -76,6 +76,18 @@ export default function QuizPage() {
   const [studyQ, setStudyQ] = useState("");
   const [studyMsgs, setStudyMsgs] = useState<{ role: "user" | "ai"; text: string }[]>([]);
   const [studyBusy, setStudyBusy] = useState(false);
+  // Persist the study chat per person, so it's here when they come back.
+  const studyKey = `rulethu-study-chat-${me}`;
+  const studyLoaded = useRef(false);
+  useEffect(() => {
+    try { const raw = localStorage.getItem(studyKey); if (raw) setStudyMsgs(JSON.parse(raw)); } catch { /* ignore */ }
+    studyLoaded.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studyKey]);
+  useEffect(() => {
+    if (!studyLoaded.current) return;
+    try { localStorage.setItem(studyKey, JSON.stringify(studyMsgs.slice(-40))); } catch { /* ignore */ }
+  }, [studyMsgs, studyKey]);
   const askStudy = async (q: string) => {
     const question = q.trim();
     if (!question || studyBusy) return;
