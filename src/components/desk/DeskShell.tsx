@@ -14,6 +14,7 @@ export const NAV = [
   { href: "/desk/commitments", label: "Commitments", icon: "M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9" },
   { href: "/desk/calendar", label: "Calendar", icon: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" },
   { href: "/desk/meetings", label: "Meetings", icon: "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3" },
+  { href: "/desk/speech", label: "Speech Builder", icon: "M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zM5 10v2a7 7 0 0 0 14 0v-2M8 23h8M12 19v4" },
   { href: "/desk/pipeline", label: "Investment", icon: "M3 3v18h18M7 15l4-4 3 3 5-6" },
   { href: "/desk/drafts", label: "Drafter", icon: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" },
   { href: "/desk/ask", label: "Ask the Desk", icon: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" },
@@ -107,7 +108,7 @@ function Shell({ children }: { children: React.ReactNode }) {
             <Link href="/lab" className="rounded-md px-2 py-1" style={{ background: "rgba(255,255,255,0.14)" }}>⚡ Lab</Link>
             <Link href="/desk/calendar" className="rounded-md px-2 py-1" style={{ background: "rgba(255,255,255,0.14)" }}>Calendar</Link>
             <Link href="/desk/pipeline" className="rounded-md px-2 py-1" style={{ background: "rgba(255,255,255,0.14)" }}>Invest</Link>
-            <Link href="/desk/drafts" className="rounded-md px-2 py-1" style={{ background: "rgba(255,255,255,0.14)" }}>Draft</Link>
+            <Link href="/desk/speech" className="rounded-md px-2 py-1" style={{ background: "rgba(255,255,255,0.14)" }}>Speech</Link>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto overflow-x-hidden">

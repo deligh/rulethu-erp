@@ -55,6 +55,7 @@ export default function TodayPage() {
         </div>
         <div className="flex gap-2 flex-wrap">
           <Btn onClick={briefPdf}>Share today&apos;s brief (PDF)</Btn>
+          <Link href="/desk/speech"><Btn kind="ghost">🎤 Speech Builder</Btn></Link>
           <Link href="/desk/economy"><Btn kind="gold">Economy Builder →</Btn></Link>
         </div>
       </div>
