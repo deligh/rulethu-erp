@@ -65,7 +65,7 @@ function systemPrompt(spec: SpeechSpec, facts: Fact[]) {
 Occasion: ${spec.occasion}. Venue: ${spec.venue || "not specified"}. Audience: ${spec.audience || "general"}. Tone: ${spec.tone}. Length: about ${words} words (${spec.minutes} minutes at ${WPM} words per minute).
 Rules:
 - Short sentences, spoken rhythm, rule-of-three where natural; plain words. Address the audience directly.
-- Use ONLY these facts for numbers (quote them faithfully). If a number is needed but not listed, write [figure]. Never invent statistics.
+- Use ONLY these facts, plus the Minister's own key messages and call to action (approved policy content), for numbers and factual claims (quote them faithfully). If a number is needed but not listed, write [figure]. Never invent statistics, people, quotations or events; any story must be clearly illustrative ("Imagine a young engineer…") unless the Minister supplied it.
 - Structure with these headings on their own lines: OPENING, WHY WE ARE HERE, OUR PROGRESS, THE OPPORTUNITY, OUR COMMITMENT, CLOSING.
 - Mark natural pauses with [pause] (sparingly) and emphasis with *single asterisks* around a few key words.
 ${spec.greeting ? `- Begin the OPENING with this greeting exactly: "${spec.greeting}" then continue in English.` : ""}
@@ -74,9 +74,9 @@ FACTS YOU MAY USE:
 ${facts.map((x) => `- ${x.text} (${x.source})`).join("\n") || "- none selected"}`;
 }
 
-export async function draftSpeech(spec: SpeechSpec, facts: Fact[]): Promise<{ text: string; live: boolean }> {
+export async function draftSpeech(spec: SpeechSpec, facts: Fact[], angle?: string): Promise<{ text: string; live: boolean }> {
   const text = await askClaude({
-    system: systemPrompt(spec, facts),
+    system: systemPrompt(spec, facts) + (angle ? `\nCREATIVE ANGLE FOR THIS VERSION: ${angle}` : ""),
     prompt: `Key messages:\n${spec.messages || "(choose suitable messages for the occasion)"}\n\nStory or example to include: ${spec.story || "(optional — use one from the facts if helpful)"}\n\nCall to action: ${spec.cta || "(choose one)"}\n\nWrite the full speech now.`,
     model: "sonnet", maxTokens: 4000, timeoutMs: 90000,
   });
@@ -157,4 +157,140 @@ export async function scanPromises(text: string): Promise<{ items: Promise_[]; l
 
 export function wordCount(t: string) {
   return t.replace(/\[pause\]/gi, "").split(/\s+/).filter((w) => /\w/.test(w) && !/^[A-Z ']{4,}$/.test(w)).length;
+}
+
+function parseJson<T>(s: string | null): T | null {
+  if (!s) return null;
+  try { return JSON.parse(s.slice(s.indexOf("{"), s.lastIndexOf("}") + 1)) as T; } catch { return null; }
+}
+
+// ======================= BEST SPEECH: 3 drafts → judge → polish =======================
+export const ANGLES = [
+  { id: "vision", name: "Visionary", brief: "Paint a vivid picture of Zimbabwe in 2030; big, hopeful imagery; a memorable repeated refrain; emotional but credible." },
+  { id: "evidence", name: "Evidence-led", brief: "Lead with the strongest facts and concrete delivery; crisp, confident, businesslike; every claim anchored in the facts; persuade sceptical investors." },
+  { id: "story", name: "Story-led", brief: "Open and close with a short human story that carries the message (no invented statistics); warm, personal, and relatable." },
+];
+export const CRITERIA = [
+  { key: "clarity", label: "Clarity" },
+  { key: "memorability", label: "Memorability" },
+  { key: "structure", label: "Structure & flow" },
+  { key: "audience", label: "Fit for audience" },
+  { key: "accuracy", label: "Factual discipline" },
+  { key: "delivery", label: "Easy to deliver" },
+] as const;
+export type CriterionKey = (typeof CRITERIA)[number]["key"];
+export interface Candidate { angle: string; name: string; text: string; scores: Record<CriterionKey, number>; total: number; strength: string; weakness: string }
+export interface BestResult { final: string; candidates: Candidate[]; winner: number; why: string; improvements: string[]; live: boolean }
+
+export async function bestSpeech(spec: SpeechSpec, facts: Fact[], onStep: (s: string) => void): Promise<BestResult> {
+  onStep("Writing three competing versions…");
+  const drafts = await Promise.all(ANGLES.map((a) => draftSpeech(spec, facts, a.brief)));
+  if (!drafts.some((d) => d.live)) {
+    return { final: drafts[0].text, candidates: [], winner: 0, why: "Offline mode — connect live AI to compare versions.", improvements: [], live: false };
+  }
+  onStep("The judge is scoring each version…");
+  const judge = parseJson<{ scores: (Record<CriterionKey, number> & { strength: string; weakness: string })[]; winner: number; why: string; improvements: string[] }>(await askClaude({
+    system: `You are a panel of three expert speech coaches judging drafts for Zimbabwe's Minister of Economic Development. Occasion: ${spec.occasion}; audience: ${spec.audience}; target ${spec.minutes} minutes (${spec.minutes * WPM} words).
+Score each draft 0-10 on: clarity, memorability, structure, audience, accuracy (uses only the allowed facts and the Minister's approved brief, no invented numbers, people or events), delivery (easy to say aloud, good rhythm, right length).
+Allowed facts:\n${facts.map((f) => `- ${f.text}`).join("\n")}
+Minister's approved brief (key messages and call to action — NOT unsupported claims):\n${spec.messages}\nCall to action: ${spec.cta}${spec.story ? `\nStory supplied by the Minister: ${spec.story}` : ""}
+Return ONLY JSON: {"scores":[{"clarity":n,"memorability":n,"structure":n,"audience":n,"accuracy":n,"delivery":n,"strength":"<one line>","weakness":"<one line>"}, ...in draft order], "winner": <0-based index>, "why": "<two sentences>", "improvements": ["<specific improvement to make to the winner, borrowing the best lines from the others>", ...up to 5]}`,
+    prompt: drafts.map((d, i) => `=== DRAFT ${i} (${ANGLES[i].name}) ===\n${d.text}`).join("\n\n"),
+    model: "sonnet", maxTokens: 3000, timeoutMs: 90000,
+  }));
+  const scores = judge?.scores ?? drafts.map(() => ({ clarity: 7, memorability: 7, structure: 7, audience: 7, accuracy: 7, delivery: 7, strength: "", weakness: "" }));
+  const candidates: Candidate[] = drafts.map((d, i) => {
+    const s = scores[i] ?? scores[0];
+    const sc = Object.fromEntries(CRITERIA.map((c) => [c.key, Math.max(0, Math.min(10, Number(s[c.key]) || 0))])) as Record<CriterionKey, number>;
+    return { angle: ANGLES[i].id, name: ANGLES[i].name, text: d.text, scores: sc, total: Object.values(sc).reduce((a, b) => a + b, 0), strength: s.strength ?? "", weakness: s.weakness ?? "" };
+  });
+  const winner = judge && Number.isInteger(judge.winner) && candidates[judge.winner] ? judge.winner : candidates.reduce((bi, c, i, arr) => (c.total > arr[bi].total ? i : bi), 0);
+  onStep("Polishing the winner with the best lines from the others…");
+  const polished = await askClaude({
+    system: systemPrompt(spec, facts) + `\nYou are polishing the winning draft into the final speech. Keep its angle and structure. Apply these improvements, borrowing the strongest lines from the other drafts where they fit:\n${(judge?.improvements ?? []).map((x) => `- ${x}`).join("\n")}\nReturn the full final speech only.`,
+    prompt: `WINNING DRAFT (${candidates[winner].name}):\n${candidates[winner].text}\n\nOTHER DRAFTS (for borrowing lines):\n${candidates.filter((_, i) => i !== winner).map((c) => `--- ${c.name} ---\n${c.text}`).join("\n\n")}`,
+    model: "sonnet", maxTokens: 4000, timeoutMs: 90000,
+  });
+  return { final: polished ?? candidates[winner].text, candidates, winner, why: judge?.why ?? "", improvements: judge?.improvements ?? [], live: true };
+}
+
+// ======================= VALIDATION =======================
+export type Level = "pass" | "warn" | "fail";
+export interface Check { id: string; label: string; level: Level; detail: string }
+export interface Claim { claim: string; status: "supported" | "general" | "unsupported" | "risky"; note: string; fix?: string; source?: string }
+export interface Validation {
+  score: number; verdict: string; checks: Check[]; claims: Claim[]; risks: string[];
+  coverage: { message: string; covered: boolean }[]; numbers: ReturnType<typeof factCheck>;
+  longSentences: string[]; aiLive: boolean; web: boolean;
+}
+
+export function sentences(t: string) {
+  return t.replace(/\[pause\]/gi, " ").replace(/\*/g, "").split(/\n+/).filter((l) => !/^[A-Z][A-Z '&]{3,}$/.test(l.trim())).join(" ").split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.split(/\s+/).length > 2);
+}
+
+export async function validateSpeech(text: string, spec: SpeechSpec, facts: Fact[], web: boolean): Promise<Validation> {
+  const checks: Check[] = [];
+  const msgs = spec.messages.split(/\n|;/).map((s) => s.trim()).filter(Boolean);
+  // 1. Numbers
+  const numbers = factCheck(text, facts, `${spec.messages} ${spec.story} ${spec.cta}`);
+  const bad = numbers.items.filter((x) => !x.ok).length;
+  checks.push({ id: "nums", label: "Every number traced to a fact", level: bad || numbers.placeholders ? (bad > 1 ? "fail" : "warn") : "pass", detail: bad || numbers.placeholders ? `${bad} number(s) not in the facts bank${numbers.placeholders ? `, ${numbers.placeholders} [figure] placeholder(s) to fill` : ""}.` : `${numbers.items.length} numbers checked — all match the facts bank or your brief.` });
+  // 2. Timing
+  const w = wordCount(text), mins = w / WPM, dev = Math.abs(mins - spec.minutes) / spec.minutes;
+  checks.push({ id: "time", label: "Fits the time slot", level: dev <= 0.15 ? "pass" : dev <= 0.3 ? "warn" : "fail", detail: `≈ ${mins.toFixed(1)} min (${w} words) for a ${spec.minutes}-minute slot.` });
+  // 3. Readability
+  const ss = sentences(text);
+  const avg = ss.length ? ss.reduce((a, s) => a + s.split(/\s+/).length, 0) / ss.length : 0;
+  const longSentences = ss.filter((s) => s.split(/\s+/).length > 28);
+  checks.push({ id: "read", label: "Easy to say aloud", level: avg <= 18 && longSentences.length <= 1 ? "pass" : avg <= 22 ? "warn" : "fail", detail: `Average ${avg.toFixed(0)} words per sentence; ${longSentences.length} very long sentence(s).` });
+  // 4. Protocol + CTA + greeting
+  const lower = text.toLowerCase();
+  const protocol = /excellenc|distinguished|ladies and gentlemen|honourable|fellow/.test(lower) || spec.occasion === "Community meeting";
+  checks.push({ id: "protocol", label: "Protocol and acknowledgements", level: protocol ? "pass" : "warn", detail: protocol ? "Opening acknowledges the audience correctly." : "Add the customary acknowledgement of dignitaries." });
+  if (spec.greeting) checks.push({ id: "greet", label: "Local-language greeting", level: text.includes(spec.greeting.split(".")[0]) ? "pass" : "warn", detail: text.includes(spec.greeting.split(".")[0]) ? "Greeting included." : "The chosen greeting is missing." });
+  const ctaWords = spec.cta.toLowerCase().split(/\W+/).filter((x) => x.length > 4);
+  const closing = lower.slice(Math.floor(lower.length * 0.7));
+  const ctaOk = !spec.cta || ctaWords.filter((x) => closing.includes(x)).length >= Math.min(2, ctaWords.length);
+  checks.push({ id: "cta", label: "Clear call to action at the end", level: ctaOk ? "pass" : "warn", detail: ctaOk ? "The close carries your call to action." : "Your call to action isn't clearly in the closing." });
+
+  // 5. AI: claims, key-message coverage, risks (optionally verified on the web)
+  const sys = `You are the fact-checker and communications risk adviser for Zimbabwe's Minister of Economic Development. Check a speech before delivery. Be concise.
+Return ONLY compact JSON (no markdown): {"claims":[{"claim":"<max 12 words>","status":"supported"|"general"|"unsupported"|"risky","note":"<max 15 words>","fix":"<safer wording, only if not supported>","source":"<url, only if verified on the web>"}], "coverage":[{"message":"<key message>","covered":true|false}], "risks":["<max 25 words>"]}
+- "supported" = matches the facts bank OR the Minister's own brief/key messages/call to action below (his policy commitments are approved content). "general" = widely accepted, low risk. "unsupported" = specific factual claim not backed by either. "risky" = likely wrong, exaggerated or sensitive.
+- List the specific factual claims (numbers, comparisons, history, achievements), max 12. ${web ? "Use web search to verify the most important claims that are NOT in the facts bank (max 3 searches) and give the source URL." : "Do not use outside sources beyond common knowledge."}
+- Risks: only MATERIAL risks (could be misquoted, overpromises, diplomatically sensitive, factually shaky). Max 4. No style suggestions. Empty list if none.
+FACTS BANK:\n${facts.map((f) => `- ${f.text} (${f.source})`).join("\n")}
+MINISTER'S BRIEF / KEY MESSAGES (approved):\n${msgs.map((m) => `- ${m}`).join("\n")}\nStory: ${spec.story || "-"}\nCall to action: ${spec.cta || "-"}`;
+  type AiCheck = { claims: Claim[]; coverage: { message: string; covered: boolean }[]; risks: string[] };
+  let ai = parseJson<AiCheck>(await askClaude({ system: sys, prompt: text, model: "sonnet", maxTokens: 4096, webSearch: web, searchMaxUses: web ? 3 : undefined, timeoutMs: web ? 115000 : 75000 }));
+  if (!ai || !Array.isArray(ai.claims)) ai = parseJson<AiCheck>(await askClaude({ system: sys, prompt: text, model: "haiku", maxTokens: 4096, timeoutMs: 45000 }));
+  if (ai && !Array.isArray(ai.claims)) ai = null;
+  const claims = ai?.claims ?? [];
+  const coverage = ai?.coverage?.length ? ai.coverage : msgs.map((m) => ({ message: m, covered: m.toLowerCase().split(/\W+/).filter((x) => x.length > 4).some((x) => lower.includes(x)) }));
+  const risks = ai?.risks ?? [];
+  const unsup = claims.filter((c) => c.status === "unsupported" || c.status === "risky").length;
+  if (ai) checks.push({ id: "claims", label: "Factual claims", level: unsup === 0 ? "pass" : unsup <= 1 ? "warn" : "fail", detail: unsup === 0 ? `${claims.length} claims checked — all supported or safe.` : `${unsup} of ${claims.length} claims need attention.` });
+  const missed = coverage.filter((c) => !c.covered).length;
+  checks.push({ id: "cover", label: "All key messages delivered", level: missed === 0 ? "pass" : "warn", detail: missed === 0 ? `All ${coverage.length} key messages are in the speech.` : `${missed} key message(s) missing.` });
+  if (ai) checks.push({ id: "risk", label: "Communications risk", level: risks.length === 0 ? "pass" : "warn", detail: risks.length === 0 ? "No risky or misquotable phrases found." : `${risks.length} phrase(s) worth a second look (advisory).` });
+  else checks.push({ id: "claims", label: "Factual claims & risk", level: "warn", detail: "AI claim check unavailable right now — press Re-check." });
+
+  const pts = { pass: 1, warn: 0.5, fail: 0 } as const;
+  const score = Math.round((checks.reduce((a, c) => a + pts[c.level], 0) / checks.length) * 100);
+  const fails = checks.filter((c) => c.level === "fail").length;
+  const verdict = !ai ? "Basic checks done — claims not yet verified" : fails === 0 && score >= 85 ? "Ready to deliver" : fails === 0 ? "Nearly ready — review the warnings" : "Needs fixes before delivery";
+  return { score, verdict, checks, claims, risks, coverage, numbers, longSentences, aiLive: !!ai, web };
+}
+
+export async function fixIssues(text: string, v: Validation, spec: SpeechSpec, facts: Fact[]): Promise<{ text: string; live: boolean }> {
+  const issues = [
+    ...v.checks.filter((c) => c.level !== "pass").map((c) => `${c.label}: ${c.detail}`),
+    ...v.claims.filter((c) => c.status === "unsupported" || c.status === "risky").map((c) => `Claim "${c.claim}" is ${c.status}: ${c.note}${c.fix ? ` Suggested: ${c.fix}` : ""}`),
+    ...v.coverage.filter((c) => !c.covered).map((c) => `Missing key message: ${c.message}`),
+    ...v.risks.map((r) => `Risk: ${r}`),
+    ...v.numbers.items.filter((n) => !n.ok).map((n) => `Unverified number ${n.n} in "…${n.context}…" — remove it or use a fact from the bank`),
+    ...v.longSentences.map((s) => `Split this long sentence: "${s.slice(0, 120)}…"`),
+  ];
+  if (!issues.length) return { text, live: true };
+  return rewriteSpeech(text, `Fix ALL of these issues while keeping the speech's voice, structure and length close to ${spec.minutes} minutes (${spec.minutes * WPM} words):\n${issues.map((x) => `- ${x}`).join("\n")}`, facts);
 }

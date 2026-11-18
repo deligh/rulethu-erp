@@ -5,6 +5,7 @@ import { useDesk, uid, todayISO } from "@/lib/desk/store";
 import {
   OCCASIONS, TONES, LENGTHS, WPM, GREETINGS, factsBank, draftSpeech, REWRITES, rewriteSpeech,
   talkingPoints, factCheck, scanPromises, wordCount, type SpeechSpec, type Promise_,
+  bestSpeech, validateSpeech, fixIssues, CRITERIA, type BestResult, type Validation,
 } from "@/lib/desk/speech";
 import { textPdf, shareOrDownload } from "@/lib/desk/pdf";
 import { Card, Btn, PageHead, Field, inputCls, inputStyle, AiTag, RichText } from "@/components/desk/ui";
@@ -71,7 +72,12 @@ export default function SpeechPage() {
   const [text, setText] = useState("");
   const [live, setLive] = useState<boolean | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"check" | "points" | "promises" | null>(null);
+  const [panel, setPanel] = useState<"check" | "points" | "promises" | "judge" | "validate" | null>(null);
+  const [best, setBest] = useState<BestResult | null>(null);
+  const [step, setStep] = useState("");
+  const [val, setVal] = useState<Validation | null>(null);
+  const [valHistory, setValHistory] = useState<number[]>([]);
+  const [viewCand, setViewCand] = useState<number | null>(null);
   const [points, setPoints] = useState<{ text: string; live: boolean } | null>(null);
   const [promises, setPromises] = useState<{ items: Promise_[]; live: boolean } | null>(null);
   const [added, setAdded] = useState(false);
@@ -90,7 +96,29 @@ export default function SpeechPage() {
   const check = useMemo(() => factCheck(text, facts, `${spec.messages} ${spec.story} ${spec.cta}`), [text, facts, spec.messages, spec.story, spec.cta]);
   const flagged = check.items.filter((x) => !x.ok).length;
 
-  const gen = async () => { setBusy("draft"); setPanel(null); const r = await draftSpeech(spec, useFacts); setText(r.text); setLive(r.live); setBusy(null); setPoints(null); setPromises(null); setAdded(false); };
+  const reset = () => { setPoints(null); setPromises(null); setAdded(false); setVal(null); setValHistory([]); setViewCand(null); };
+  const gen = async () => { setBusy("draft"); setPanel(null); reset(); setBest(null); const r = await draftSpeech(spec, useFacts); setText(r.text); setLive(r.live); setBusy(null); };
+  const runValidate = async (t: string, web = false) => {
+    setBusy(web ? "web" : "validate"); setPanel("validate"); setStep(web ? "Checking claims against live web sources…" : "Validating every number, claim and message…");
+    const v = await validateSpeech(t, spec, useFacts, web);
+    setVal(v); setValHistory((h) => [...h, v.score]); setBusy(null); setStep("");
+    return v;
+  };
+  const genBest = async () => {
+    setBusy("best"); setPanel(null); reset();
+    const r = await bestSpeech(spec, useFacts, setStep);
+    setBest(r); setText(r.final); setLive(r.live);
+    setStep("Validating the final speech…");
+    await runValidate(r.final);
+    setPanel(r.live ? "judge" : "validate");
+  };
+  const fixAll = async () => {
+    if (!val) return;
+    setBusy("fix"); setStep("Fixing every issue the validator found…");
+    const r = await fixIssues(text, val, spec, useFacts);
+    setText(r.text); setLive(r.live);
+    await runValidate(r.text);
+  };
   const rw = async (id: string, instr: string) => { setBusy(id); const r = await rewriteSpeech(text, instr, useFacts); setText(r.text); setLive(r.live); setBusy(null); };
   const doPoints = async () => { setPanel("points"); if (!points) { setBusy("points"); setPoints(await talkingPoints(text)); setBusy(null); } };
   const doPromises = async () => { setPanel("promises"); setBusy("promises"); setPromises(await scanPromises(text)); setBusy(null); setAdded(false); };
@@ -146,7 +174,9 @@ export default function SpeechPage() {
               </div>
             ))}
           </Card>
-          <Btn onClick={gen} disabled={!!busy} className="w-full !py-3">{busy === "draft" ? "Writing your speech…" : text ? "✦ Write a fresh draft" : "✦ Write my speech"}</Btn>
+          <Btn onClick={genBest} disabled={!!busy} className="w-full !py-3">{busy === "best" ? "Building the best speech…" : "✦ Write the best speech"}</Btn>
+          <p className="text-[11px] text-center -mt-2" style={{ color: "var(--text-faint)" }}>3 versions written in parallel → judged on 6 criteria → winner polished → fully validated (≈ 1–2 min)</p>
+          <Btn kind="ghost" onClick={gen} disabled={!!busy} className="w-full">{busy === "draft" ? "Writing…" : "Quick single draft"}</Btn>
         </div>
 
         {/* ---------- Editor ---------- */}
@@ -161,6 +191,14 @@ export default function SpeechPage() {
                   <button onClick={() => setPanel(panel === "check" ? null : "check")} className="text-xs font-semibold rounded-full px-2.5 py-1" style={{ background: flagged || check.placeholders ? "var(--lz-yellow-bg)" : "var(--lz-green-bg)", color: flagged || check.placeholders ? "var(--lz-yellow-fg)" : "var(--lz-green-fg)" }}>
                     {flagged || check.placeholders ? `⚠ ${flagged} unverified number${flagged === 1 ? "" : "s"}${check.placeholders ? ` · ${check.placeholders} [figure]` : ""}` : "✓ All numbers from facts bank"}
                   </button>
+                  {val ? (
+                    <button onClick={() => setPanel(panel === "validate" ? null : "validate")} className="text-xs font-bold rounded-full px-2.5 py-1" style={{ background: val.score >= 85 ? "var(--lz-green-bg)" : val.score >= 65 ? "var(--lz-yellow-bg)" : "var(--lz-red-bg)", color: val.score >= 85 ? "var(--lz-green-fg)" : val.score >= 65 ? "var(--lz-yellow-fg)" : "var(--lz-red-fg)" }}>
+                      Validation {val.score}/100 · {val.verdict}
+                    </button>
+                  ) : (
+                    <button onClick={() => runValidate(text)} disabled={!!busy} className="text-xs font-semibold rounded-full px-2.5 py-1 border" style={{ borderColor: "var(--brand)", color: "var(--brand)" }}>✓ Validate speech</button>
+                  )}
+                  {best?.live && <button onClick={() => setPanel(panel === "judge" ? null : "judge")} className="text-xs font-semibold rounded-full px-2.5 py-1 border" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>🏆 Judge&apos;s scorecard</button>}
                   <div className="ml-auto flex gap-2">
                     <Btn kind="ghost" onClick={doPoints}>Talking points</Btn>
                     <Btn kind="ghost" onClick={doPromises}>Scan promises</Btn>
@@ -171,6 +209,96 @@ export default function SpeechPage() {
                   {REWRITES.map((r) => <button key={r.id} onClick={() => rw(r.id, r.instruction)} disabled={!!busy} className="text-xs rounded-full border px-3 py-1 disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text)", background: "var(--surface)" }}>{busy === r.id ? "Rewriting…" : r.label}</button>)}
                 </div>
               </Card>
+
+              {busy && step && (
+                <Card style={{ borderColor: "var(--brand)" }}>
+                  <div className="flex items-center gap-3">
+                    <span className="h-5 w-5 rounded-full border-2 animate-spin shrink-0" style={{ borderColor: "var(--brand)", borderTopColor: "transparent" }} />
+                    <div className="text-sm font-semibold" style={{ color: "var(--text)" }}>{step}</div>
+                  </div>
+                </Card>
+              )}
+
+              {panel === "judge" && best?.live && (
+                <Card style={{ borderColor: "var(--accent)" }}>
+                  <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>The judging panel</div>
+                  <h3 className="font-bold mt-0.5" style={{ color: "var(--text)" }}>3 versions written · {best.candidates[best.winner].name} won · polished into your final speech</h3>
+                  <div className="grid gap-3 md:grid-cols-3 mt-3">
+                    {best.candidates.map((c, i) => (
+                      <div key={c.angle} className="rounded-lg p-3 border" style={{ borderColor: i === best.winner ? "var(--accent)" : "var(--border)", background: i === best.winner ? "var(--lz-yellow-bg)" : "var(--surface)" }}>
+                        <div className="flex justify-between items-baseline"><b style={{ color: "var(--text)" }}>{i === best.winner ? "🏆 " : ""}{c.name}</b><span className="text-lg font-extrabold" style={{ color: i === best.winner ? "var(--accent)" : "var(--text)" }}>{c.total}<span className="text-xs font-normal" style={{ color: "var(--text-faint)" }}>/60</span></span></div>
+                        <div className="space-y-1 mt-2">
+                          {CRITERIA.map((k) => (
+                            <div key={k.key} className="flex items-center gap-2 text-[11px]"><span className="w-28 shrink-0" style={{ color: "var(--text-muted)" }}>{k.label}</span><div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--border)" }}><div className="h-full" style={{ width: `${c.scores[k.key] * 10}%`, background: i === best.winner ? "var(--accent)" : "#a5adba" }} /></div><span className="w-4 text-right" style={{ color: "var(--text)" }}>{c.scores[k.key]}</span></div>
+                          ))}
+                        </div>
+                        {c.strength && <div className="text-[11px] mt-2" style={{ color: "var(--pos)" }}>+ {c.strength}</div>}
+                        {c.weakness && <div className="text-[11px]" style={{ color: "var(--neg)" }}>− {c.weakness}</div>}
+                        <button onClick={() => setViewCand(viewCand === i ? null : i)} className="text-[11px] font-semibold mt-2" style={{ color: "var(--brand)" }}>{viewCand === i ? "Hide this version" : "Read this version"}</button>
+                      </div>
+                    ))}
+                  </div>
+                  {best.why && <p className="text-sm mt-3" style={{ color: "var(--text)" }}><b>Why it won:</b> {best.why}</p>}
+                  {best.improvements.length > 0 && <div className="text-sm mt-2" style={{ color: "var(--text)" }}><b>Applied in the polish:</b><ul className="mt-1 space-y-0.5">{best.improvements.map((x, k) => <li key={k} className="text-xs" style={{ color: "var(--text-muted)" }}>• {x}</li>)}</ul></div>}
+                  {viewCand !== null && (
+                    <div className="mt-3 rounded-lg p-4 text-sm whitespace-pre-line leading-relaxed max-h-80 overflow-y-auto" style={{ background: "var(--surface-2, #f4f5f7)", color: "var(--text)" }}>
+                      {best.candidates[viewCand].text}
+                      <div className="mt-3"><Btn kind="ghost" onClick={() => { setText(best.candidates[viewCand].text); setVal(null); }}>Use this version instead</Btn></div>
+                    </div>
+                  )}
+                </Card>
+              )}
+
+              {panel === "validate" && val && (
+                <Card style={{ borderColor: val.score >= 85 ? "var(--pos)" : val.score >= 65 ? "var(--warn)" : "var(--neg)" }}>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="relative h-20 w-20 shrink-0">
+                      <svg viewBox="0 0 36 36" className="h-20 w-20 -rotate-90"><circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--border)" strokeWidth="3.2" /><circle cx="18" cy="18" r="15.9" fill="none" stroke={val.score >= 85 ? "var(--pos)" : val.score >= 65 ? "var(--warn)" : "var(--neg)"} strokeWidth="3.2" strokeDasharray={`${val.score} 100`} strokeLinecap="round" /></svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-xl font-extrabold" style={{ color: "var(--text)" }}>{val.score}</span><span className="text-[9px]" style={{ color: "var(--text-faint)" }}>/100</span></div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-lg font-bold" style={{ color: val.score >= 85 ? "var(--pos)" : val.score >= 65 ? "var(--warn)" : "var(--neg)" }}>{val.verdict}</div>
+                      <div className="text-xs" style={{ color: "var(--text-muted)" }}>{val.aiLive ? `Numbers, claims, messages, timing, readability and risk checked${val.web ? " — claims verified against live web sources" : ""}.` : "Offline checks only (numbers, timing, readability, structure). Connect live AI for claim and risk checks."}{valHistory.length > 1 && ` Score history: ${valHistory.join(" → ")}.`}</div>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {val.score < 100 && <Btn onClick={fixAll} disabled={!!busy}>{busy === "fix" ? "Fixing…" : "✦ Fix all issues"}</Btn>}
+                      {!val.web && <Btn kind="ghost" onClick={() => runValidate(text, true)} disabled={!!busy}>{busy === "web" ? "Searching…" : "Verify claims on the web"}</Btn>}
+                      <Btn kind="ghost" onClick={() => runValidate(text, val.web)} disabled={!!busy}>Re-check</Btn>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-2 mt-4">
+                    {val.checks.map((c) => (
+                      <div key={c.id} className="flex gap-2 items-start rounded-lg p-2.5" style={{ background: "var(--surface-2, #f4f5f7)" }}>
+                        <span className="h-5 w-5 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0 text-white" style={{ background: c.level === "pass" ? "var(--pos)" : c.level === "warn" ? "var(--warn)" : "var(--neg)" }}>{c.level === "pass" ? "✓" : c.level === "warn" ? "!" : "✕"}</span>
+                        <div><div className="text-sm font-semibold" style={{ color: "var(--text)" }}>{c.label}</div><div className="text-xs" style={{ color: "var(--text-muted)" }}>{c.detail}</div></div>
+                      </div>
+                    ))}
+                  </div>
+                  {val.claims.length > 0 && (
+                    <div className="mt-4">
+                      <div className="text-sm font-bold mb-2" style={{ color: "var(--text)" }}>Every factual claim</div>
+                      <div className="space-y-1.5">
+                        {val.claims.map((c, i) => {
+                          const col = c.status === "supported" ? "var(--pos)" : c.status === "general" ? "var(--info)" : c.status === "unsupported" ? "var(--warn)" : "var(--neg)";
+                          return (
+                            <div key={i} className="text-xs border-l-4 pl-2.5 py-1" style={{ borderColor: col }}>
+                              <span className="font-bold uppercase text-[10px] mr-1.5" style={{ color: col }}>{c.status}</span><span style={{ color: "var(--text)" }}>{c.claim}</span>
+                              <div style={{ color: "var(--text-faint)" }}>{c.note}{c.fix && c.status !== "supported" ? ` → ${c.fix}` : ""}{c.source && <> · <a href={c.source} target="_blank" rel="noreferrer" style={{ color: "var(--brand)" }}>source</a></>}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {val.coverage.length > 0 && (
+                    <div className="mt-4"><div className="text-sm font-bold mb-1" style={{ color: "var(--text)" }}>Key messages</div>{val.coverage.map((c, i) => <div key={i} className="text-xs py-0.5" style={{ color: c.covered ? "var(--text)" : "var(--neg)" }}>{c.covered ? "✓" : "✕"} {c.message}</div>)}</div>
+                  )}
+                  {val.risks.length > 0 && (
+                    <div className="mt-4 rounded-lg p-3" style={{ background: "var(--lz-yellow-bg)" }}><div className="text-sm font-bold mb-1" style={{ color: "var(--lz-yellow-fg)" }}>Communications risks</div>{val.risks.map((r, i) => <div key={i} className="text-xs py-0.5" style={{ color: "var(--lz-yellow-fg)" }}>• {r}</div>)}</div>
+                  )}
+                  {val.longSentences.length > 0 && <div className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}><b>Long sentences to split:</b> {val.longSentences.map((s) => `“${s.slice(0, 70)}…”`).join(" · ")}</div>}
+                </Card>
+              )}
 
               {panel === "check" && (
                 <Card>
@@ -208,10 +336,21 @@ export default function SpeechPage() {
               </Card>
             </>
           ) : (
-            <Card className="text-center py-16">
+            busy && step ? (
+              <Card className="text-center py-16" style={{ borderColor: "var(--brand)" }}>
+                <span className="inline-block h-10 w-10 rounded-full border-4 animate-spin mb-4" style={{ borderColor: "var(--brand)", borderTopColor: "transparent" }} />
+                <div className="font-bold text-lg" style={{ color: "var(--text)" }}>{step}</div>
+                <div className="mt-4 space-y-1.5 text-sm max-w-xs mx-auto text-left" style={{ color: "var(--text-muted)" }}>
+                  {["Writing three competing versions…", "The judge is scoring each version…", "Polishing the winner with the best lines from the others…", "Validating the final speech…"].map((s, i, arr) => {
+                    const cur = arr.indexOf(step), done = cur > i || cur === -1;
+                    return <div key={s} style={{ color: cur === i ? "var(--brand)" : done ? "var(--pos)" : "var(--text-faint)", fontWeight: cur === i ? 700 : 400 }}>{done && cur !== i ? "✓" : cur === i ? "●" : "○"} {s.replace("…", "")}</div>;
+                  })}
+                </div>
+              </Card>
+            ) : <Card className="text-center py-16">
               <div className="text-5xl mb-3">🎤</div>
               <div className="font-bold text-lg" style={{ color: "var(--text)" }}>Your speech appears here</div>
-              <p className="text-sm mt-1 max-w-md mx-auto" style={{ color: "var(--text-muted)" }}>Set the occasion, tick the facts you want to use, and press <b>Write my speech</b>. Then polish it with one-click rewrites, fact-check every number, and rehearse on the teleprompter.</p>
+              <p className="text-sm mt-1 max-w-md mx-auto" style={{ color: "var(--text-muted)" }}>Set the occasion, tick the facts you want to use, and press <b>Write the best speech</b>. The AI writes three versions, a judging panel picks the strongest, it is polished and then validated line by line — every number, claim and key message.</p>
             </Card>
           )}
         </div>
