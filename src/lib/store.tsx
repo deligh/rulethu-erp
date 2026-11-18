@@ -328,6 +328,37 @@ export interface BoardNote {
   createdAt: string;
 }
 
+// Portfolio & Investor (LP) CRM -------------------------------------------
+export interface Holding {
+  id: string;
+  company: string;        // portfolio company / asset name
+  sector: string;
+  stage: "Seed" | "Growth" | "Buyout" | "Private Credit" | "Real Assets" | "Listed";
+  invested: number;       // cost basis (USD)
+  fairValue: number;      // current fair value (USD)
+  ownership: number;      // percent 0..100
+  entryDate: string;      // yyyy-mm-dd
+  status: "Performing" | "Watch" | "Underperforming" | "Exited" | "Written off";
+  lead: string;           // deal lead (employee name)
+  note?: string;
+  createdAt: string;
+}
+export interface Investor {
+  id: string;
+  name: string;           // LP / investor name
+  type: "Institutional" | "Family Office" | "DFI" | "HNWI" | "Corporate";
+  contact?: string;       // primary contact person
+  email?: string;
+  committed: number;      // capital commitment (USD)
+  called: number;         // capital drawn to date
+  distributed: number;    // distributions to date
+  relationship: "Prospect" | "Committed" | "Active" | "Exited";
+  owner: string;          // relationship owner (employee name)
+  lastContact?: string;   // yyyy-mm-dd
+  note?: string;
+  createdAt: string;
+}
+
 // Collections that support generic add / patch.
 interface Collections {
   deals: Deal[];
@@ -357,6 +388,8 @@ interface Collections {
   workLogs: WorkLog[];
   reminders: Reminder[];
   boardNotes: BoardNote[];
+  holdings: Holding[];
+  investors: Investor[];
 }
 type CKey = keyof Collections;
 type Item<K extends CKey> = Collections[K][number];
@@ -453,6 +486,22 @@ const SEED: AppData = {
     { id: "BN-1", author: "Delight", text: "Solar IPP — confirm 20yr PPA tariff", color: "var(--lz-yellow-bg)", x: 12, y: 18, createdAt: "2026-11-16T00:00:00Z" },
     { id: "BN-2", author: "Research Desk", text: "Lithium price risk → stress off-take economics", color: "var(--lz-blue-bg)", x: 44, y: 32, createdAt: "2026-11-16T00:00:00Z" },
     { id: "BN-3", author: "Gamu", text: "Dry-Port: corridor volumes +6% q/q", color: "var(--lz-green-bg)", x: 70, y: 22, createdAt: "2026-11-16T00:00:00Z" },
+  ],
+  holdings: [
+    { id: "H-1", company: "Lithium Off-take SPV", sector: "Mining & Resources", stage: "Private Credit", invested: 30_000_000, fairValue: 21_500_000, ownership: 100, entryDate: "2025-08-05", status: "Watch", lead: "Blessed", note: "Lithium price soft; off-take economics under review.", createdAt: "2025-08-05T00:00:00Z" },
+    { id: "H-2", company: "Harare Logistics Park", sector: "Real Estate", stage: "Real Assets", invested: 9_200_000, fairValue: 10_800_000, ownership: 65, entryDate: "2024-11-12", status: "Performing", lead: "Gamu", note: "Occupancy 94%; USD leases.", createdAt: "2024-11-12T00:00:00Z" },
+    { id: "H-3", company: "40MW Solar IPP", sector: "Energy & Infrastructure", stage: "Growth", invested: 12_000_000, fairValue: 12_400_000, ownership: 40, entryDate: "2026-02-20", status: "Watch", lead: "Blessed", note: "Tariff negotiation pending IC.", createdAt: "2026-02-20T00:00:00Z" },
+    { id: "H-4", company: "Cold-Chain Manufacturing", sector: "Manufacturing", stage: "Buyout", invested: 3_200_000, fairValue: 4_100_000, ownership: 55, entryDate: "2024-03-18", status: "Performing", lead: "Delight", note: "EBITDA +18% YoY.", createdAt: "2024-03-18T00:00:00Z" },
+    { id: "H-5", company: "Tanaka Retail Group", sector: "Consumer & Retail", stage: "Growth", invested: 5_500_000, fairValue: 7_900_000, ownership: 30, entryDate: "2023-09-01", status: "Performing", lead: "Gamu", note: "Store rollout ahead of plan.", createdAt: "2023-09-01T00:00:00Z" },
+    { id: "H-6", company: "AgriFin Microbank", sector: "Financial Services", stage: "Growth", invested: 2_800_000, fairValue: 2_600_000, ownership: 25, entryDate: "2025-05-10", status: "Underperforming", lead: "Delight", note: "PAR elevated; turnaround plan in place.", createdAt: "2025-05-10T00:00:00Z" },
+  ],
+  investors: [
+    { id: "LP-1", name: "Southern Africa Pension Fund", type: "Institutional", contact: "T. Ncube", email: "", committed: 40_000_000, called: 28_000_000, distributed: 9_000_000, relationship: "Active", owner: "Takudzwa Mhlanga", lastContact: "2026-10-28", note: "Re-up discussion for Fund III in Q1.", createdAt: "2024-01-15T00:00:00Z" },
+    { id: "LP-2", name: "Pan-African DFI", type: "DFI", contact: "M. Dlamini", email: "", committed: 35_000_000, called: 22_000_000, distributed: 4_500_000, relationship: "Active", owner: "Takudzwa Mhlanga", lastContact: "2026-11-02", note: "ESG reporting pack due quarterly.", createdAt: "2024-02-01T00:00:00Z" },
+    { id: "LP-3", name: "Moyo Family Office", type: "Family Office", contact: "R. Moyo", email: "", committed: 12_000_000, called: 8_000_000, distributed: 3_200_000, relationship: "Active", owner: "Delight", lastContact: "2026-10-15", note: "Prefers real-asset co-invest.", createdAt: "2024-06-10T00:00:00Z" },
+    { id: "LP-4", name: "Gulf Sovereign Co-invest", type: "Institutional", contact: "A. Rahman", email: "", committed: 25_000_000, called: 0, distributed: 0, relationship: "Committed", owner: "Takudzwa Mhlanga", lastContact: "2026-11-05", note: "Signed; first drawdown scheduled Dec.", createdAt: "2026-09-20T00:00:00Z" },
+    { id: "LP-5", name: "Harare HNWI Syndicate", type: "HNWI", contact: "Various", email: "", committed: 6_000_000, called: 4_200_000, distributed: 1_800_000, relationship: "Active", owner: "Gamu", lastContact: "2026-09-30", note: "12 individuals via nominee.", createdAt: "2024-04-04T00:00:00Z" },
+    { id: "LP-6", name: "East Africa Insurance Co.", type: "Institutional", contact: "P. Otieno", email: "", committed: 20_000_000, called: 0, distributed: 0, relationship: "Prospect", owner: "Delight", lastContact: "2026-10-20", note: "Reviewing PPM; IC meets their board Jan.", createdAt: "2026-08-12T00:00:00Z" },
   ],
   market: null,
 };

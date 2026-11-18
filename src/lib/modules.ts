@@ -9,6 +9,7 @@ export type ModuleKey =
   | "programme"
   | "comms"
   | "investments"
+  | "portfolio"
   | "research"
   | "finance"
   | "alternatives"
@@ -50,6 +51,7 @@ const ICONS = {
   exchange: "M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4",
   briefcase: "M3 7h18v13H3zM8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M3 12h18",
   board: "M4 4h16v12H4zM8 20h8M12 16v4M8 8h3M8 11h6",
+  portfolio: "M3 3v18h18M7 15l3-4 3 3 5-7M18 10h2M18 10v2",
 };
 
 export const MODULES: AppModule[] = [
@@ -137,6 +139,17 @@ export const MODULES: AppModule[] = [
     description:
       "Deal pipeline, valuation workbench (NAV, multiples, DCF), investment memos and IC decisions.",
     icon: ICONS.trending,
+    status: "live",
+    group: "core",
+  },
+  {
+    key: "portfolio",
+    name: "Portfolio & Investors",
+    href: "/portfolio",
+    tagline: "Holdings & LP relationships",
+    description:
+      "Live portfolio of holdings — cost, fair value, ownership and performance — plus an investor (LP) CRM tracking commitments, capital called, distributions and relationships.",
+    icon: ICONS.portfolio,
     status: "live",
     group: "core",
   },

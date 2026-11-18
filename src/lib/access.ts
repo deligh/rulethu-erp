@@ -29,6 +29,7 @@ export const MODULE_DEPARTMENTS: Partial<Record<ModuleKey, string[]>> = {
   finance: ["Finance"],
   treasury: ["Investments", "Finance"],
   investments: ["Investments"],
+  portfolio: ["Investments"],
   alternatives: ["Investments"],
   microfinance: ["Finance", "Investments"],
   procurement: ["Finance", "Operations"],
