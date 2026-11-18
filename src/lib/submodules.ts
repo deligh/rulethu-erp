@@ -110,6 +110,7 @@ export const SUBMODULES: Record<ModuleKey, SubModuleDef[]> = {
   investments: [
     { slug: "", name: "Pipeline", status: "live" },
     { slug: "valuation", name: "Valuation Workbench", status: "live", custom: true },
+    { slug: "fcff", name: "Company Valuation", status: "live", custom: true },
     { slug: "dcf", name: "DCF Valuation", status: "live", custom: true },
     { slug: "models", name: "Financial Models", status: "live", custom: true },
     {
