@@ -6,8 +6,9 @@ import { useSearchParams } from "next/navigation";
 import { useAppData, CURRENT_USER, genId } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import {
-  draftFromTemplate, draftFromTemplateLive, AiSnapshot, Template, Department, DEPARTMENTS, AI_DEMO_NOTE, AiDraft,
+  draftFromTemplate, draftFromTemplateLive, scopeSnapshot, AiSnapshot, Template, Department, DEPARTMENTS, AI_DEMO_NOTE, AiDraft,
 } from "@/lib/ai";
+import { canAccessModule } from "@/lib/access";
 import ModuleTabs from "@/components/ModuleTabs";
 import { PageHeader, Card, Badge, SectionTitle } from "@/components/ui";
 
@@ -109,6 +110,15 @@ function StudioInner() {
     }, { debit: 0, credit: 0 }),
   }), [data.deals, data.loans, data.tbills, data.employees, data.tasks, data.leave, data.reports, data.entries]);
 
+  const scopedSnap = useMemo(() => {
+    if (!user) return scopeSnapshot(snap, { deals: false, ledger: false, book: false });
+    return scopeSnapshot(snap, {
+      deals: canAccessModule(user, "investments"),
+      ledger: canAccessModule(user, "finance"),
+      book: canAccessModule(user, "finance") || canAccessModule(user, "treasury") || canAccessModule(user, "microfinance"),
+    });
+  }, [snap, user]);
+
   const [dept, setDept] = useState<Department | "All">("All");
   const [entityId, setEntityId] = useState<string>("rulethu");
   const [selId, setSelId] = useState<string>("");
@@ -169,9 +179,9 @@ function StudioInner() {
     const fullBrief = composeBrief();
     setTimeout(async () => {
       try {
-        setContent(await draftFromTemplateLive(selected, fullBrief, snap));
+        setContent(await draftFromTemplateLive(selected, fullBrief, scopedSnap));
       } catch {
-        setContent(draftFromTemplate(selected, fullBrief, snap));
+        setContent(draftFromTemplate(selected, fullBrief, scopedSnap));
       } finally {
         setBusy(false);
       }

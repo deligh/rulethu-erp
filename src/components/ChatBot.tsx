@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppData, genId } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
-import { answerQueryLive, runChecks, AiSnapshot, AiAnswer, NavItem } from "@/lib/ai";
+import { answerQueryLive, runChecks, scopeSnapshot, AiSnapshot, AiAnswer, NavItem } from "@/lib/ai";
+import { canAccessModule } from "@/lib/access";
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -76,6 +77,16 @@ export default function ChatBot() {
     };
   }, [data]);
 
+  // Scope what the AI can see to the signed-in user's access — no leakages.
+  const scopedSnap = useMemo(() => {
+    if (!user) return scopeSnapshot(snap, { deals: false, ledger: false, book: false });
+    return scopeSnapshot(snap, {
+      deals: canAccessModule(user, "investments"),
+      ledger: canAccessModule(user, "finance"),
+      book: canAccessModule(user, "finance") || canAccessModule(user, "treasury") || canAccessModule(user, "microfinance"),
+    });
+  }, [snap, user]);
+
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [msgs, thinking, open]);
 
   const myUpcoming = () => {
@@ -112,7 +123,7 @@ export default function ChatBot() {
           : { agent: "Rulethu AI", text: `You’ve nothing on your personal calendar yet. Tell me “add … to my calendar” and I’ll schedule it, or add one on the Calendar.`, sources: [{ label: "Open my calendar", href: "/calendar", module: "Calendar", keywords: "" }] };
       } else {
         const history = msgs.filter((m) => m.id !== "welcome").map((m) => ({ role: m.role === "ai" ? ("assistant" as const) : ("user" as const), content: m.text }));
-        a = await answerQueryLive(text, snap, history);
+        a = await answerQueryLive(text, scopedSnap, history);
       }
       setMsgs((m) => [...m, { id: `a${Date.now()}`, role: "ai", text: a.text, agent: a.agent, sources: a.sources }]);
       setThinking(false);

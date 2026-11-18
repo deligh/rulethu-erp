@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppData } from "@/lib/store";
-import { answerQueryLive, navSearch, runChecks, AiSnapshot, AiAnswer, AI_DEMO_NOTE } from "@/lib/ai";
+import { useAuth } from "@/lib/auth";
+import { canAccessModule } from "@/lib/access";
+import { answerQueryLive, navSearch, runChecks, scopeSnapshot, AiSnapshot, AiAnswer, AI_DEMO_NOTE } from "@/lib/ai";
 
 export const ASK_AI_EVENT = "rulethu:ask-ai";
 
@@ -30,6 +32,7 @@ function Rich({ text }: { text: string }) {
 
 export default function AskAI() {
   const data = useAppData();
+  const { user } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -56,6 +59,16 @@ export default function AskAI() {
     }),
     knowledge: data.knowledge.map((k) => ({ name: k.name, folder: k.folder, description: k.description, excerpt: k.excerpt, readable: k.readable })),
   }), [data.deals, data.loans, data.tbills, data.employees, data.tasks, data.leave, data.reports, data.entries, data.pos, data.requisitions, data.requests, data.goals, data.knowledge]);
+
+  // Scope to the signed-in user's access — the palette must not reveal restricted data.
+  const scopedSnap = useMemo(() => {
+    if (!user) return scopeSnapshot(snap, { deals: false, ledger: false, book: false });
+    return scopeSnapshot(snap, {
+      deals: canAccessModule(user, "investments"),
+      ledger: canAccessModule(user, "finance"),
+      book: canAccessModule(user, "finance") || canAccessModule(user, "treasury") || canAccessModule(user, "microfinance"),
+    });
+  }, [snap, user]);
 
   // Open via keyboard + custom event.
   useEffect(() => {
@@ -89,7 +102,7 @@ export default function AskAI() {
     setAnswer(null);
     // tiny delay so it reads like it's "thinking" (demo flourish)
     setTimeout(async () => {
-      setAnswer(await answerQueryLive(q, snap));
+      setAnswer(await answerQueryLive(q, scopedSnap));
       setThinking(false);
     }, 320);
   };

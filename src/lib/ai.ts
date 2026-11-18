@@ -164,6 +164,23 @@ export const AGENTS: AiAgent[] = [
 /* Live-data snapshot the answer engine reads from                    */
 /* ------------------------------------------------------------------ */
 
+// Role/department scoping for the AI context, so the assistant never reveals
+// data a user couldn't open in the UI (keeps the chatbot consistent with the
+// role-scoped dashboard and module access — "no leakages").
+export interface AiScope { deals: boolean; ledger: boolean; book: boolean }
+
+export function scopeSnapshot(snap: AiSnapshot, scope: AiScope): AiSnapshot {
+  return {
+    ...snap,
+    deals: scope.deals ? snap.deals : [],
+    loans: scope.book ? snap.loans : [],
+    tbills: scope.book ? snap.tbills : [],
+    ledger: scope.ledger ? snap.ledger : { debit: 0, credit: 0 },
+    checks: scope.ledger || scope.deals ? snap.checks : [],
+    // employees, tasks, leave, reports and knowledge stay — they are group-shared.
+  };
+}
+
 export interface AiSnapshot {
   deals: { name: string; stage: string; ticket: number; sector: string }[];
   loans: { borrower: string; principal: number; status: string }[];
