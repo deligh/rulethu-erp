@@ -41,6 +41,24 @@ export interface PeriodReport {
   entryCount: number;
 }
 
+export interface Ratio { label: string; value: string; basis: string; explain: string }
+
+/** Key ratios with the actual numbers behind each, so the figures explain themselves. */
+export function keyRatios(r: PeriodReport): Ratio[] {
+  const m = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+  const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
+  const safe = (a: number, b: number) => (b ? a / b : 0);
+  return [
+    { label: "Net profit margin", value: pct(safe(r.netProfit, r.revenue)), basis: `${m(r.netProfit)} ÷ ${m(r.revenue)}`, explain: "Share of every revenue dollar kept as profit after all expenses." },
+    { label: "Expense ratio", value: pct(safe(r.expenses, r.revenue)), basis: `${m(r.expenses)} ÷ ${m(r.revenue)}`, explain: "Portion of revenue consumed by operating and finance costs." },
+    { label: "Return on equity (ROE)", value: pct(safe(r.netProfit, r.totalEquity)), basis: `${m(r.netProfit)} ÷ ${m(r.totalEquity)}`, explain: "Profit generated on shareholders' funds for the period." },
+    { label: "Return on assets (ROA)", value: pct(safe(r.netProfit, r.totalAssets)), basis: `${m(r.netProfit)} ÷ ${m(r.totalAssets)}`, explain: "Profit generated per dollar of total assets." },
+    { label: "Equity ratio (solvency)", value: pct(safe(r.totalEquity, r.totalAssets)), basis: `${m(r.totalEquity)} ÷ ${m(r.totalAssets)}`, explain: "How much of the balance sheet is funded by equity rather than debt." },
+    { label: "Debt-to-equity", value: `${safe(r.totalLiabilities, r.totalEquity).toFixed(2)}x`, basis: `${m(r.totalLiabilities)} ÷ ${m(r.totalEquity)}`, explain: "Liabilities carried for each dollar of equity." },
+    { label: "Cash to liabilities", value: `${safe(r.cashClose, r.totalLiabilities).toFixed(2)}x`, basis: `${m(r.cashClose)} ÷ ${m(r.totalLiabilities)}`, explain: "Immediate cash cover against what the business owes." },
+  ];
+}
+
 /* ---------------- date helpers (UTC, string-safe) ---------------- */
 const pad = (n: number) => String(n).padStart(2, "0");
 const iso = (d: Date) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;

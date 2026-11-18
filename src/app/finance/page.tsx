@@ -32,6 +32,25 @@ export default function FinancePage() {
 
       <ModuleTabs moduleKey="finance" />
 
+      {/* Primary workflow — capture daily, statements build themselves */}
+      <div className="grid sm:grid-cols-3 gap-4 mb-6">
+        <Link href="/finance/capture" className="rz-card rounded-lg border p-4" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+          <div className="text-2xl mb-1">💵</div>
+          <h3 className="font-semibold" style={{ color: "var(--text)" }}>Daily Capture</h3>
+          <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Record money in / out in plain language — the system does the double-entry. No accountant needed.</p>
+        </Link>
+        <Link href="/finance/statements" className="rz-card rounded-lg border p-4" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+          <div className="text-2xl mb-1">📊</div>
+          <h3 className="font-semibold" style={{ color: "var(--text)" }}>Financial Statements</h3>
+          <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Weekly, monthly and annual P&amp;L, balance sheet, cash flow and ratios — always balanced, export to Excel &amp; PDF.</p>
+        </Link>
+        <Link href="/finance/general-ledger" className="rz-card rounded-lg border p-4" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+          <div className="text-2xl mb-1">📒</div>
+          <h3 className="font-semibold" style={{ color: "var(--text)" }}>General Ledger</h3>
+          <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Every posting in one place — the single source of truth the statements are built from.</p>
+        </Link>
+      </div>
+
       <ModuleProgress module="finance" />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

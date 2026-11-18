@@ -8,7 +8,7 @@
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { PeriodReport } from "./finperiods";
+import { PeriodReport, keyRatios } from "./finperiods";
 import { TBAccount } from "./accounting";
 
 const money = (n: number) => Math.round(n);
@@ -121,6 +121,14 @@ export function financialsXlsx(r: PeriodReport, commentary: string) {
     XLSX.utils.book_append_sheet(wb, ws, "Balance Sheet");
   }
 
+  // --- Key ratios sheet ---
+  {
+    const rows = keyRatios(r).map((k) => [k.label, k.value, k.basis, k.explain]);
+    const ws = XLSX.utils.aoa_to_sheet([["Key ratio", "Value", "How it is calculated", "What it means"], ...rows]);
+    ws["!cols"] = [{ wch: 26 }, { wch: 12 }, { wch: 34 }, { wch: 60 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Key Ratios");
+  }
+
   // --- Commentary sheet ---
   {
     const lines = (commentary || "No commentary.").split("\n").map((l) => [l]);
@@ -139,74 +147,114 @@ const INK: [number, number, number] = [23, 43, 77];
 const MUTED: [number, number, number] = [98, 111, 134];
 const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 
+const finalY = (doc: jsPDF) => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+
 export function financialsPdf(r: PeriodReport, commentary: string, preparedBy?: string) {
   const doc = new jsPDF({ format: "a4", unit: "mm" });
   const W = doc.internal.pageSize.getWidth();
+  const nf = (n: number) => usd(n);
 
-  doc.setFillColor(...GREEN); doc.rect(0, 0, W, 24, "F");
-  doc.setFillColor(...GOLD); doc.rect(0, 24, W, 1.4, "F");
+  // ---- Cover / letterhead ----
+  doc.setFillColor(...GREEN); doc.rect(0, 0, W, 26, "F");
+  doc.setFillColor(...GOLD); doc.rect(0, 26, W, 1.6, "F");
   doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text("RULETHU HOLDINGS", 14, 11);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text("Financial Statements", 14, 18);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text("RULETHU HOLDINGS", 14, 12);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.text("Financial Statements", 14, 19);
   doc.setTextColor(...INK);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text(r.def.label, 14, 36);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...MUTED);
-  doc.text(`${r.def.start} to ${r.def.end}${preparedBy ? ` · prepared by ${preparedBy}` : ""}`, 14, 42);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(17); doc.text(r.def.label, 14, 40);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(...MUTED);
+  doc.text(`For the period ${r.def.start} to ${r.def.end}`, 14, 47);
+  doc.text("Basis of preparation: accruals basis, historical cost, in USD, drawn directly from the General Ledger.", 14, 52.5);
+  doc.text(`Prepared by: ${preparedBy ?? "Finance"}   ·   Status: ${r.plBalanced && r.bsBalanced ? "Balanced and ready" : "Under review"}`, 14, 58);
 
-  const balTag = r.plBalanced && r.bsBalanced ? "Balanced · debits = credits · A = L + E" : "Review — out of balance";
   const RED: [number, number, number] = [185, 18, 60];
   const bc = r.plBalanced && r.bsBalanced ? GREEN : RED;
   doc.setTextColor(bc[0], bc[1], bc[2]);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.text(balTag, 14, 48);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
+  doc.text(r.plBalanced && r.bsBalanced ? "Integrity checks passed — debits = credits and Assets = Liabilities + Equity." : "Review — statements are out of balance.", 14, 64);
 
-  const nf = (n: number) => usd(n);
+  // ---- Income Statement ----
   autoTable(doc, {
-    startY: 54,
-    head: [["Income Statement", r.def.label, r.prior ? "Prior" : ""]],
+    startY: 70,
+    head: [["A/C", "Income Statement", r.def.label, r.prior ? "Prior" : ""]],
     body: [
-      ...r.incomeLines.map((l) => [l.name, nf(l.amount), ""]),
-      ["Total revenue", nf(r.revenue), r.prior ? nf(r.prior.revenue) : ""],
-      ...r.expenseLines.map((l) => [l.name, `(${nf(l.amount)})`, ""]),
-      ["Total expenses", `(${nf(r.expenses)})`, r.prior ? `(${nf(r.prior.expenses)})` : ""],
-      ["Net profit / (loss)", nf(r.netProfit), r.prior ? nf(r.prior.netProfit) : ""],
+      ...r.incomeLines.map((l) => [l.code, l.name, nf(l.amount), ""]),
+      ["", "Total revenue", nf(r.revenue), r.prior ? nf(r.prior.revenue) : ""],
+      ...r.expenseLines.map((l) => [l.code, l.name, `(${nf(l.amount)})`, ""]),
+      ["", "Total expenses", `(${nf(r.expenses)})`, r.prior ? `(${nf(r.prior.expenses)})` : ""],
+      ["", "Net profit / (loss)", nf(r.netProfit), r.prior ? nf(r.prior.netProfit) : ""],
     ],
     styles: { fontSize: 9, cellPadding: 2, textColor: INK },
     headStyles: { fillColor: GREEN, textColor: 255 },
-    columnStyles: { 1: { halign: "right" }, 2: { halign: "right" } },
-    didParseCell: (d) => { const raw = d.row.raw as (string | number)[]; if (d.section === "body" && (d.row.index === 1 || raw[0] === "Total expenses" || String(raw[0]).startsWith("Net profit"))) d.cell.styles.fontStyle = "bold"; },
+    columnStyles: { 0: { cellWidth: 14, textColor: MUTED }, 2: { halign: "right" }, 3: { halign: "right" } },
+    didParseCell: (d) => { const raw = d.row.raw as (string | number)[]; if (d.section === "body" && /^Total|^Net profit/.test(String(raw[1]))) d.cell.styles.fontStyle = "bold"; },
     margin: { left: 14, right: 14 },
   });
 
-  // Balance sheet
-  const afterIS = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+  // ---- Balance Sheet ----
   autoTable(doc, {
-    startY: afterIS,
-    head: [["Balance Sheet — as at " + r.def.end, ""]],
+    startY: finalY(doc) + 6,
+    head: [["A/C", `Balance Sheet — as at ${r.def.end}`, ""]],
     body: [
-      ...r.assetLines.map((l) => [l.name, nf(l.amount)]),
-      ["Total assets", nf(r.totalAssets)],
-      ...r.liabilityLines.map((l) => [l.name, nf(l.amount)]),
-      ["Total liabilities", nf(r.totalLiabilities)],
-      ...r.equityLines.map((l) => [l.name, nf(l.amount)]),
-      ["Retained earnings — period", nf(r.retainedEarnings)],
-      ["Total equity", nf(r.totalEquity)],
-      ["Liabilities + Equity", nf(r.totalLiabilities + r.totalEquity)],
+      ...r.assetLines.map((l) => [l.code, l.name, nf(l.amount)]),
+      ["", "Total assets", nf(r.totalAssets)],
+      ...r.liabilityLines.map((l) => [l.code, l.name, nf(l.amount)]),
+      ["", "Total liabilities", nf(r.totalLiabilities)],
+      ...r.equityLines.map((l) => [l.code, l.name, nf(l.amount)]),
+      ["", "Retained earnings — period", nf(r.retainedEarnings)],
+      ["", "Total equity", nf(r.totalEquity)],
+      ["", "Liabilities + Equity", nf(r.totalLiabilities + r.totalEquity)],
+    ],
+    styles: { fontSize: 9, cellPadding: 2, textColor: INK },
+    headStyles: { fillColor: GREEN, textColor: 255 },
+    columnStyles: { 0: { cellWidth: 14, textColor: MUTED }, 2: { halign: "right" } },
+    didParseCell: (d) => { const raw = d.row.raw as (string | number)[]; if (d.section === "body" && /^Total|^Liabilities \+/.test(String(raw[1]))) d.cell.styles.fontStyle = "bold"; },
+    margin: { left: 14, right: 14 },
+  });
+
+  // ---- Cash Flow summary (reconciled to the bank balance) ----
+  const adj = r.cashMovement - r.netProfit;
+  autoTable(doc, {
+    startY: finalY(doc) + 6,
+    head: [["Cash Flow summary", ""]],
+    body: [
+      ["Opening cash at bank", nf(r.cashOpen)],
+      ["Net profit for the period", nf(r.netProfit)],
+      ["Adjustments & other movements (working capital, investing, financing)", nf(adj)],
+      ["Net change in cash", nf(r.cashMovement)],
+      ["Closing cash at bank", nf(r.cashClose)],
     ],
     styles: { fontSize: 9, cellPadding: 2, textColor: INK },
     headStyles: { fillColor: GREEN, textColor: 255 },
     columnStyles: { 1: { halign: "right" } },
-    didParseCell: (d) => { const raw = d.row.raw as (string | number)[]; if (d.section === "body" && /^Total|^Liabilities \+/.test(String(raw[0]))) d.cell.styles.fontStyle = "bold"; },
+    didParseCell: (d) => { const raw = d.row.raw as (string | number)[]; if (d.section === "body" && /^Net change|^Closing cash/.test(String(raw[0]))) d.cell.styles.fontStyle = "bold"; },
     margin: { left: 14, right: 14 },
   });
 
-  // Commentary
+  // ---- Key Ratios (with the maths shown) ----
+  autoTable(doc, {
+    startY: finalY(doc) + 6,
+    head: [["Key ratio", "Value", "How it is calculated", "What it means"]],
+    body: keyRatios(r).map((k) => [k.label, k.value, k.basis, k.explain]),
+    styles: { fontSize: 8, cellPadding: 1.8, textColor: INK, valign: "middle" },
+    headStyles: { fillColor: GREEN, textColor: 255 },
+    columnStyles: { 0: { cellWidth: 34, fontStyle: "bold" }, 1: { cellWidth: 18, halign: "right" }, 2: { cellWidth: 40 }, 3: { cellWidth: "auto" } },
+    margin: { left: 14, right: 14 },
+  });
+
+  // ---- Notes & analysis (AI explains the calculations and interprets them) ----
   if (commentary && commentary.trim()) {
-    let y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
-    if (y > 250) { doc.addPage(); y = 20; }
-    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...INK); doc.text("Management commentary", 14, y); y += 5;
+    doc.addPage();
+    doc.setFillColor(...GREEN); doc.rect(0, 0, W, 10, "F");
+    let y = 20;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...INK); doc.text("Notes & analysis", 14, y); y += 2;
+    doc.setDrawColor(...GOLD); doc.setLineWidth(0.5); doc.line(14, y, W - 14, y); y += 7;
     doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(...INK);
-    const lines = doc.splitTextToSize(commentary.trim(), W - 28) as string[];
-    for (const ln of lines) { if (y > 285) { doc.addPage(); y = 20; } doc.text(ln, 14, y); y += 5; }
+    for (const para of commentary.trim().split(/\n{2,}/)) {
+      const lines = doc.splitTextToSize(para.trim(), W - 28) as string[];
+      for (const ln of lines) { if (y > 284) { doc.addPage(); y = 20; } doc.text(ln, 14, y); y += 5; }
+      y += 2.5;
+    }
   }
 
   const stamp = new Date().toLocaleString("en-GB");

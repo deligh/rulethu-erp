@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { askClaude } from "@/lib/aiClient";
 import { PageHeader, Card, Badge, SectionTitle, Table, Th, Td, StatCard } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
-import { listPeriods, periodStatements, PeriodType, PeriodReport } from "@/lib/finperiods";
+import { listPeriods, periodStatements, keyRatios, PeriodType } from "@/lib/finperiods";
 import { financialsXlsx, financialsPdf } from "@/lib/finexport";
 import { fmtMoney, fmtPct } from "@/lib/format";
 
@@ -40,16 +40,27 @@ export default function FinancialStatementsPage() {
     if (!report) return;
     setGenBusy(true);
     const r = report;
-    const vs = r.prior ? `Prior period net profit was ${fmtMoney(r.prior.netProfit)} (revenue ${fmtMoney(r.prior.revenue)}).` : "No prior-period comparison available.";
+    const money = (n: number) => fmtMoney(n);
+    const lines = (arr: { name: string; amount: number }[]) => arr.map((l) => `${l.name} ${money(l.amount)}`).join("; ");
+    const ratios = keyRatios(r).map((k) => `${k.label} = ${k.value} (${k.basis})`).join("; ");
+    const vs = r.prior ? `Prior period: revenue ${money(r.prior.revenue)}, expenses ${money(r.prior.expenses)}, net profit ${money(r.prior.netProfit)}.` : "No prior-period comparison available.";
     const text = await askClaude({
-      system: "You are the Finance Manager at Rulethu Holdings, an African investment group in Harare. Write a concise management discussion & analysis (MD&A) for a set of financial statements. Plain text only — no markdown, no asterisks, no headings symbols. 2 to 3 short paragraphs. Be specific with the actual figures given, comment on revenue, profitability and margin, cash position and balance-sheet strength, and flag anything that needs attention. Professional, factual, board-ready.",
-      prompt: `Period: ${r.def.label} (${r.def.start} to ${r.def.end}).
-Revenue: ${fmtMoney(r.revenue)}. Expenses: ${fmtMoney(r.expenses)}. Net profit: ${fmtMoney(r.netProfit)}. Net margin: ${r.revenue ? fmtPct(r.netProfit / r.revenue) : "n/a"}.
-${vs}
-Total assets: ${fmtMoney(r.totalAssets)}. Total liabilities: ${fmtMoney(r.totalLiabilities)}. Total equity: ${fmtMoney(r.totalEquity)}. Cash at bank: ${fmtMoney(r.cashClose)} (moved ${fmtMoney(r.cashMovement)} in the period).
-Write the MD&A now.`,
-      model: "haiku",
-      maxTokens: 700,
+      system:
+        "You are the Finance Manager at Rulethu Holdings, an African investment group in Harare, writing the Notes & Analysis that accompany a set of financial statements for the board. " +
+        "Plain text only — no markdown, no asterisks, no symbols as headings. Write clear, well-structured prose a non-accountant can follow, with short labelled sections separated by blank lines. " +
+        "Use these section labels on their own line: OVERVIEW, HOW THE RESULT IS BUILT, PROFITABILITY, CASH POSITION, BALANCE SHEET AND RATIOS, WHAT TO WATCH. " +
+        "In HOW THE RESULT IS BUILT, explicitly explain the arithmetic in words (e.g. net profit of X equals revenue Y less total expenses Z; revenue Y is made up of these income lines). " +
+        "In BALANCE SHEET AND RATIOS, explain what each key ratio means and how it is derived from the figures. Be specific with the actual numbers provided, accurate, and board-ready.",
+      prompt: `Period: ${r.def.label} (${r.def.start} to ${r.def.end}). ${r.entryCount} postings.
+INCOME lines: ${lines(r.incomeLines)}. Total revenue ${money(r.revenue)}.
+EXPENSE lines: ${lines(r.expenseLines)}. Total expenses ${money(r.expenses)}.
+Net profit: ${money(r.netProfit)} (margin ${r.revenue ? fmtPct(r.netProfit / r.revenue) : "n/a"}). ${vs}
+BALANCE SHEET as at ${r.def.end}: assets [${lines(r.assetLines)}] total ${money(r.totalAssets)}; liabilities [${lines(r.liabilityLines)}] total ${money(r.totalLiabilities)}; equity [${lines(r.equityLines)}] plus retained earnings ${money(r.retainedEarnings)}, total equity ${money(r.totalEquity)}.
+CASH: opened ${money(r.cashOpen)}, moved ${money(r.cashMovement)}, closed ${money(r.cashClose)}.
+RATIOS: ${ratios}.
+Write the Notes & Analysis now.`,
+      model: "sonnet",   // low-frequency, board-grade document — worth the stronger model
+      maxTokens: 1300,
     });
     setCommentary((text ?? "").replace(/[*_#`]/g, "").trim());
     setGenBusy(false);
@@ -154,13 +165,27 @@ Write the MD&A now.`,
             </Card>
           </div>
 
-          {/* commentary (editable before publish) */}
+          {/* key ratios */}
+          <Card className="mb-6">
+            <SectionTitle hint="each figure shows the maths behind it">Key ratios</SectionTitle>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-2">
+              {keyRatios(report).map((k) => (
+                <div key={k.label} className="rounded-md border p-3" style={{ borderColor: "var(--border)" }}>
+                  <div className="text-lg font-bold" style={{ color: "var(--brand)" }}>{k.value}</div>
+                  <div className="text-xs font-medium" style={{ color: "var(--text)" }}>{k.label}</div>
+                  <div className="text-[11px] mt-0.5" style={{ color: "var(--text-faint)" }}>{k.basis}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* notes & analysis (editable before publish) */}
           <Card className="mb-6">
             <div className="flex items-center justify-between gap-2 mb-2">
-              <SectionTitle hint="editable before you publish">Management commentary</SectionTitle>
-              <button onClick={genCommentary} disabled={genBusy} className="rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text)" }}>{genBusy ? "Writing…" : "✨ Generate with AI"}</button>
+              <SectionTitle hint="AI explains the figures · editable before you publish">Notes &amp; analysis</SectionTitle>
+              <button onClick={genCommentary} disabled={genBusy} className="rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-50" style={{ borderColor: "var(--border)", color: "var(--text)" }}>{genBusy ? "Writing…" : "✨ Explain with AI"}</button>
             </div>
-            <textarea value={commentary} onChange={(e) => setCommentary(e.target.value)} rows={7} placeholder="Write or generate the management discussion & analysis… You have full editing rights before publishing." className="w-full rounded-md border px-3 py-2 text-sm" style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }} />
+            <textarea value={commentary} onChange={(e) => setCommentary(e.target.value)} rows={10} placeholder="Click ‘Explain with AI’ to generate board-ready notes that explain how each figure is built and what it means — then edit freely before publishing." className="w-full rounded-md border px-3 py-2 text-sm" style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }} />
           </Card>
         </>
       )}

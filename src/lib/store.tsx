@@ -551,6 +551,7 @@ interface Ctx extends AppData {
   // finance / workflow-specific
   addEntry: (memo: string, source: string, lines: JournalEntry["lines"], date?: string) => void;
   importJournals: (rows: JournalEntry[]) => void;
+  removeEntry: (id: string) => void;
   addLeave: (r: Omit<LeaveRequest, "id" | "status" | "createdAt">) => void;
   setLeaveStatus: (id: string, status: LeaveStatus) => void;
   addClaim: (c: Omit<TravelClaim, "id" | "status" | "createdAt">) => void;
@@ -677,6 +678,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       entries: [...d.entries, ...rows],
       notifications: [mkNote("Postings imported", `${rows.length} journal entries added to the ledger`, "finance"), ...d.notifications],
     }));
+  }, []);
+
+  const removeEntry: Ctx["removeEntry"] = useCallback((id) => {
+    setData((d) => ({ ...d, entries: d.entries.filter((e) => e.id !== id || e.id === "JE-OPEN") }));
   }, []);
 
   const addLeave: Ctx["addLeave"] = useCallback((r) => {
@@ -885,7 +890,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const value: Ctx = {
     ...data,
     hydrated,
-    addEntry, importJournals, addLeave, setLeaveStatus, addClaim, setClaimStatus, addMessage, addChannel, addChannelMember, markAllRead, markNoteRead, notify, add, patch, remove, resetAll,
+    addEntry, importJournals, removeEntry, addLeave, setLeaveStatus, addClaim, setClaimStatus, addMessage, addChannel, addChannelMember, markAllRead, markNoteRead, notify, add, patch, remove, resetAll,
     raiseRequest, fulfilRequest, setRequestStatus, setMarket, setDigestDate, setChannelContext, addChannelInsight, publishReport,
   };
 
