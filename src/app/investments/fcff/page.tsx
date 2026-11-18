@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { computeFcff, FCFF_SAMPLE, FcffInputs, scenarioTable, fcffSensitivity } from "@/lib/fcff";
+import { computeComps, DEFAULT_PEERS, Peer } from "@/lib/comps";
 import { fcffXlsx, fcffPdf } from "@/lib/fcffexport";
 import { Section, NumField, Tabs } from "@/components/model/ModelKit";
 import { PageHeader, Card, Badge, SectionTitle, Table, Th, Td } from "@/components/ui";
@@ -13,11 +14,13 @@ import { useAuth } from "@/lib/auth";
 const m0 = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 const pct = (n: number, d = 1) => `${(n * 100).toFixed(d)}%`;
 
-type Tab = "setup" | "assumptions" | "valuation" | "scenarios" | "sensitivity";
+type Tab = "setup" | "assumptions" | "valuation" | "comps" | "summary" | "scenarios" | "sensitivity";
 const TABS = [
   { key: "setup" as const, label: "Set up (AI / upload)" },
   { key: "assumptions" as const, label: "Assumptions" },
-  { key: "valuation" as const, label: "Valuation" },
+  { key: "valuation" as const, label: "DCF Valuation" },
+  { key: "comps" as const, label: "Comps (EV/EBITDA · P/E)" },
+  { key: "summary" as const, label: "Summary" },
   { key: "scenarios" as const, label: "Scenarios" },
   { key: "sensitivity" as const, label: "Sensitivity" },
 ];
@@ -43,6 +46,34 @@ export default function FcffPage() {
   const r = useMemo(() => computeFcff(inp), [inp]);
   const scn = useMemo(() => scenarioTable(inp), [inp]);
   const sens = useMemo(() => fcffSensitivity(inp), [inp]);
+
+  // Relative valuation (comps)
+  const [peers, setPeers] = useState<Peer[]>(DEFAULT_PEERS);
+  const derivedEbitda = r.years[0].ebit + r.years[0].da;
+  const derivedNi = r.years[0].nopat;
+  const [ebitdaOv, setEbitdaOv] = useState<number | null>(null);
+  const [niOv, setNiOv] = useState<number | null>(null);
+  const subjEbitda = ebitdaOv ?? derivedEbitda;
+  const subjNi = niOv ?? derivedNi;
+  const netDebt = inp.totalDebt - inp.cash;
+  const comps = useMemo(() => computeComps({ ebitda: subjEbitda, netIncome: subjNi, netDebt, shares: inp.shares, peers }),
+    [subjEbitda, subjNi, netDebt, inp.shares, peers]);
+  const fx = inp.exchangeRate;
+  const setPeer = (idx: number, k: keyof Peer, v: string) => setPeers((p) => p.map((x, i) => (i === idx ? { ...x, [k]: k === "name" ? v : Number(v) } : x)));
+  const addPeer = () => setPeers((p) => [...p, { name: "New peer", evEbitda: 6, pe: 10 }]);
+  const delPeer = (idx: number) => setPeers((p) => p.filter((_, i) => i !== idx));
+
+  // football field (local currency)
+  const field = useMemo(() => {
+    const rows = [
+      { label: "DCF (Bear–Bull)", low: scn[0].perShareLocal, mid: scn[1].perShareLocal, high: scn[2].perShareLocal },
+      { label: "EV/EBITDA comps", low: comps.evEbitda.psLow * fx, mid: comps.evEbitda.psMid * fx, high: comps.evEbitda.psHigh * fx },
+      { label: "P/E comps", low: comps.pe.psLow * fx, mid: comps.pe.psMid * fx, high: comps.pe.psHigh * fx },
+    ];
+    const blended = rows.reduce((s, x) => s + x.mid, 0) / rows.length;
+    const vals = rows.flatMap((x) => [x.low, x.high]).concat(inp.vwap, inp.lastTraded, blended).filter((x) => isFinite(x) && x > 0);
+    return { rows, blended, min: Math.min(...vals) * 0.9, max: Math.max(...vals) * 1.05 };
+  }, [scn, comps, fx, inp.vwap, inp.lastTraded]);
 
   const set = (k: keyof FcffInputs, v: number) => setInp((p) => ({ ...p, [k]: v }));
   const setArr = (k: "revGrowth" | "ebitMargin", idx: number, v: number) => setInp((p) => { const a = [...p[k]]; a[idx] = v; return { ...p, [k]: a }; });
@@ -109,6 +140,11 @@ export default function FcffPage() {
     setNote((text ?? "").replace(/[*_#`]/g, "").trim()); setNoteBusy(false);
   };
 
+  const relPack = () => ({
+    peers, evMultMid: comps.evEbitda.multMid, peMultMid: comps.pe.multMid,
+    subjEbitda, subjNi, netDebt, fx, rows: field.rows, blended: field.blended, price: inp.vwap,
+  });
+
   const vTone = r.verdict === "UNDERVALUED" ? "live" : r.verdict === "OVERVALUED" ? "neg" : "warn";
 
   return (
@@ -130,8 +166,8 @@ export default function FcffPage() {
 
       {/* export bar */}
       <div className="flex flex-wrap items-center gap-2 mb-5">
-        <button onClick={() => fcffXlsx(inp, r)} className="rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>⬇ Excel (live formulas)</button>
-        <button onClick={() => fcffPdf(inp, r, note, user?.name)} className="rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>⬇ PDF{note ? " + note" : ""}</button>
+        <button onClick={() => fcffXlsx(inp, r, relPack())} className="rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>⬇ Excel (live formulas)</button>
+        <button onClick={() => fcffPdf(inp, r, note, user?.name, relPack())} className="rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>⬇ PDF{note ? " + note" : ""}</button>
         <button onClick={genNote} disabled={noteBusy} className="rounded-md px-3 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ background: "var(--brand)" }}>{noteBusy ? "Writing…" : "✨ Valuation note (AI)"}</button>
         <span className="text-xs" style={{ color: "var(--text-faint)" }}>Excel is fully formula-driven — change any assumption and it recalculates.</span>
       </div>
@@ -231,6 +267,86 @@ export default function FcffPage() {
             </Table>
           </Card>
         </div>
+      )}
+
+      {tab === "comps" && (
+        <div className="grid lg:grid-cols-2 gap-6 items-start">
+          <Card>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <SectionTitle hint="peer trading multiples — edit to your comp set">Comparable companies</SectionTitle>
+              <button onClick={addPeer} className="rounded-md border px-2.5 py-1 text-xs font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>+ Peer</button>
+            </div>
+            <Table head={<><Th>Company</Th><Th right>EV/EBITDA</Th><Th right>P/E</Th><Th right>{""}</Th></>}>
+              {peers.map((p, idx) => (
+                <tr key={idx}>
+                  <Td><input value={p.name} onChange={(e) => setPeer(idx, "name", e.target.value)} className="w-full bg-transparent text-sm" style={{ color: "var(--text)" }} /></Td>
+                  <Td right><input type="number" value={p.evEbitda} onChange={(e) => setPeer(idx, "evEbitda", e.target.value)} className="w-16 text-right bg-transparent text-sm tabular" style={{ color: "var(--text)" }} /></Td>
+                  <Td right><input type="number" value={p.pe} onChange={(e) => setPeer(idx, "pe", e.target.value)} className="w-16 text-right bg-transparent text-sm tabular" style={{ color: "var(--text)" }} /></Td>
+                  <Td right><button onClick={() => delPeer(idx)} className="text-xs" style={{ color: "var(--neg)" }}>✕</button></Td>
+                </tr>
+              ))}
+              <tr><Td strong>Median</Td><Td right strong>{comps.evEbitda.multMid.toFixed(1)}x</Td><Td right strong>{comps.pe.multMid.toFixed(1)}x</Td><Td right>{""}</Td></tr>
+            </Table>
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <label className="text-xs" style={{ color: "var(--text-muted)" }}>Subject EBITDA<input type="number" value={Math.round(subjEbitda)} onChange={(e) => setEbitdaOv(Number(e.target.value))} className="w-full rounded-md border px-2.5 py-1.5 text-sm mt-1" style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }} /></label>
+              <label className="text-xs" style={{ color: "var(--text-muted)" }}>Subject net income<input type="number" value={Math.round(subjNi)} onChange={(e) => setNiOv(Number(e.target.value))} className="w-full rounded-md border px-2.5 py-1.5 text-sm mt-1" style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }} /></label>
+            </div>
+            <p className="mt-2 text-[11px]" style={{ color: "var(--text-faint)" }}>Net debt {m0(netDebt)} (debt − cash). EBITDA & net income default from the model; edit for reported figures. {(ebitdaOv !== null || niOv !== null) && <button onClick={() => { setEbitdaOv(null); setNiOv(null); }} className="underline" style={{ color: "var(--brand)" }}>reset to model</button>}</p>
+          </Card>
+          <Card>
+            <SectionTitle hint="implied value / share (local)">Relative valuation</SectionTitle>
+            <Table head={<><Th>Method</Th><Th right>Low</Th><Th right>Median</Th><Th right>High</Th></>}>
+              <tr><Td strong>EV/EBITDA</Td><Td right>{(comps.evEbitda.psLow * fx).toFixed(3)}</Td><Td right strong>{(comps.evEbitda.psMid * fx).toFixed(3)}</Td><Td right>{(comps.evEbitda.psHigh * fx).toFixed(3)}</Td></tr>
+              <tr><Td strong>P/E</Td><Td right>{(comps.pe.psLow * fx).toFixed(3)}</Td><Td right strong>{(comps.pe.psMid * fx).toFixed(3)}</Td><Td right>{(comps.pe.psHigh * fx).toFixed(3)}</Td></tr>
+              <tr><Td>DCF intrinsic</Td><Td right>{scn[0].perShareLocal.toFixed(3)}</Td><Td right strong><span style={{ color: "var(--brand)" }}>{r.perShareLocal.toFixed(3)}</span></Td><Td right>{scn[2].perShareLocal.toFixed(3)}</Td></tr>
+              <tr><Td>Market (VWAP)</Td><Td right>{""}</Td><Td right>{inp.vwap.toFixed(2)}</Td><Td right>{""}</Td></tr>
+            </Table>
+            <p className="mt-2 text-[11px]" style={{ color: "var(--text-faint)" }}>EV/EBITDA: (multiple × EBITDA − net debt) ÷ shares. P/E: multiple × net income ÷ shares. Converted at {fx.toFixed(2)}/USD.</p>
+          </Card>
+        </div>
+      )}
+
+      {tab === "summary" && (
+        <Card>
+          <SectionTitle hint="DCF vs market multiples vs price (local currency)">Valuation summary — football field</SectionTitle>
+          <div className="mt-3 space-y-3">
+            {field.rows.map((row) => {
+              const span = field.max - field.min || 1;
+              const L = ((row.low - field.min) / span) * 100;
+              const Wd = ((row.high - row.low) / span) * 100;
+              const M = ((row.mid - field.min) / span) * 100;
+              return (
+                <div key={row.label}>
+                  <div className="flex justify-between text-xs mb-1"><span style={{ color: "var(--text-muted)" }}>{row.label}</span><span className="tabular" style={{ color: "var(--text)" }}>{row.low.toFixed(2)} – {row.high.toFixed(2)} (mid {row.mid.toFixed(2)})</span></div>
+                  <div className="relative h-5 rounded" style={{ background: "var(--surface-2)" }}>
+                    <div className="absolute h-5 rounded" style={{ left: `${L}%`, width: `${Math.max(1, Wd)}%`, background: "color-mix(in srgb, var(--brand) 45%, transparent)" }} />
+                    <div className="absolute h-5 w-0.5" style={{ left: `${M}%`, background: "var(--brand)" }} />
+                  </div>
+                </div>
+              );
+            })}
+            {/* price + blended markers */}
+            {(() => {
+              const span = field.max - field.min || 1;
+              const priceL = ((inp.vwap - field.min) / span) * 100;
+              const blendL = ((field.blended - field.min) / span) * 100;
+              return (
+                <div className="relative h-8 mt-2">
+                  <div className="absolute top-0 h-8 w-0.5" style={{ left: `${priceL}%`, background: "var(--neg)" }} />
+                  <div className="absolute top-0 text-[10px] font-semibold" style={{ left: `${priceL}%`, color: "var(--neg)", transform: "translateX(-50%)" }}>price {inp.vwap.toFixed(2)}</div>
+                  <div className="absolute bottom-0 h-8 w-0.5" style={{ left: `${blendL}%`, background: "var(--accent)" }} />
+                  <div className="absolute bottom-0 text-[10px] font-semibold" style={{ left: `${blendL}%`, color: "var(--accent)", transform: "translateX(-50%)" }}>blended {field.blended.toFixed(2)}</div>
+                </div>
+              );
+            })()}
+          </div>
+          <div className="mt-4 grid sm:grid-cols-3 gap-4">
+            <div className="rounded-md border p-3" style={{ borderColor: "var(--border)" }}><div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>Blended value / share</div><div className="text-xl font-bold" style={{ color: "var(--brand)" }}>{field.blended.toFixed(3)}</div></div>
+            <div className="rounded-md border p-3" style={{ borderColor: "var(--border)" }}><div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>Market (VWAP)</div><div className="text-xl font-bold" style={{ color: "var(--text)" }}>{inp.vwap.toFixed(3)}</div></div>
+            <div className="rounded-md border p-3" style={{ borderColor: "var(--border)" }}><div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>Upside to blended</div><div className="text-xl font-bold" style={{ color: field.blended >= inp.vwap ? "var(--pos)" : "var(--neg)" }}>{pct(inp.vwap ? field.blended / inp.vwap - 1 : 0, 1)}</div></div>
+          </div>
+          <p className="mt-3 text-[11px]" style={{ color: "var(--text-faint)" }}>Blended = average of the DCF, EV/EBITDA and P/E midpoints. Indicative only, not advice.</p>
+        </Card>
       )}
 
       {tab === "scenarios" && (

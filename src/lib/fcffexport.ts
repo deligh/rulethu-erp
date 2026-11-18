@@ -13,7 +13,15 @@ const col = (n: number) => String.fromCharCode(64 + n); // 2->B
 const F = (f: string, v: number) => ({ t: "n" as const, f, v });
 const slug = (s: string) => s.replace(/[^\w]+/g, "-").slice(0, 40);
 
-export function fcffXlsx(i: FcffInputs, r: FcffResult) {
+export interface RelativePack {
+  peers: { name: string; evEbitda: number; pe: number }[];
+  evMultMid: number; peMultMid: number;
+  subjEbitda: number; subjNi: number; netDebt: number; fx: number;
+  rows: { label: string; low: number; mid: number; high: number }[]; // local currency
+  blended: number; price: number;
+}
+
+export function fcffXlsx(i: FcffInputs, r: FcffResult, rel?: RelativePack) {
   const wb = XLSX.utils.book_new();
   const A = XLSX.utils.encode_cell;
   const put = (ws: XLSX.WorkSheet, c: number, rrow: number, val: unknown) => { ws[A({ c: c - 1, r: rrow - 1 })] = typeof val === "object" ? val : { t: typeof val === "number" ? "n" : "s", v: val }; };
@@ -106,6 +114,26 @@ export function fcffXlsx(i: FcffInputs, r: FcffResult) {
   const se = XLSX.utils.aoa_to_sheet([["Sensitivity — intrinsic value / share (local)"], head, ...body]);
   se["!cols"] = [{ wch: 12 }, ...sens.growths.map(() => ({ wch: 11 }))]; XLSX.utils.book_append_sheet(wb, se, "Sensitivity");
 
+  // ---------- Relative valuation (comps) ----------
+  if (rel) {
+    const aoa: (string | number)[][] = [
+      ["RELATIVE VALUATION — comparable companies"],
+      ["Peer", "EV/EBITDA", "P/E"],
+      ...rel.peers.map((p) => [p.name, p.evEbitda, p.pe]),
+      ["Median", rel.evMultMid, rel.peMultMid],
+      [],
+      ["Subject EBITDA", rel.subjEbitda], ["Subject net income", rel.subjNi], ["Net debt", rel.netDebt], ["Shares", i.shares], ["FX (local/USD)", rel.fx],
+      [],
+      ["Football field — value / share (local)", "Low", "Mid", "High"],
+      ...rel.rows.map((x) => [x.label, Number(x.low.toFixed(3)), Number(x.mid.toFixed(3)), Number(x.high.toFixed(3))]),
+      ["Blended (avg of midpoints)", "", Number(rel.blended.toFixed(3)), ""],
+      ["Current price (VWAP)", "", Number(rel.price.toFixed(3)), ""],
+    ];
+    const cs = XLSX.utils.aoa_to_sheet(aoa);
+    cs["!cols"] = [{ wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, cs, "Relative valuation");
+  }
+
   XLSX.writeFile(wb, `rulethu-valuation-${slug(i.company)}.xlsx`);
 }
 
@@ -116,7 +144,7 @@ const INK: [number, number, number] = [23, 43, 77];
 const MUTED: [number, number, number] = [98, 111, 134];
 const m0 = (n: number) => Math.round(n).toLocaleString("en-US");
 
-export function fcffPdf(i: FcffInputs, r: FcffResult, notes: string, preparedBy?: string) {
+export function fcffPdf(i: FcffInputs, r: FcffResult, notes: string, preparedBy?: string, rel?: RelativePack) {
   const doc = new jsPDF({ format: "a4", unit: "mm" });
   const W = doc.internal.pageSize.getWidth();
   const finalY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
@@ -163,6 +191,30 @@ export function fcffPdf(i: FcffInputs, r: FcffResult, notes: string, preparedBy?
     styles: { fontSize: 7.5, cellPadding: 1.4, textColor: INK }, headStyles: { fillColor: GREEN, textColor: 255 },
     columnStyles: { 1: { halign: "right" }, 3: { halign: "right" } }, margin: { left: 14, right: 14 },
   });
+
+  // Relative valuation + football field
+  if (rel) {
+    autoTable(doc, {
+      startY: finalY() + 5,
+      head: [["Method (value/share, local)", "Low", "Mid", "High"]],
+      body: [
+        ...rel.rows.map((x) => [x.label, x.low.toFixed(2), x.mid.toFixed(2), x.high.toFixed(2)]),
+        ["Blended (avg of midpoints)", "", rel.blended.toFixed(2), ""],
+        ["Current price (VWAP)", "", rel.price.toFixed(2), ""],
+      ],
+      styles: { fontSize: 8.5, cellPadding: 1.6, textColor: INK }, headStyles: { fillColor: GREEN, textColor: 255 },
+      columnStyles: { 1: { halign: "right" }, 2: { halign: "right", fontStyle: "bold" }, 3: { halign: "right" } },
+      didParseCell: (d) => { const raw = d.row.raw as (string | number)[]; if (d.section === "body" && /^Blended/.test(String(raw[0]))) d.cell.styles.fontStyle = "bold"; },
+      margin: { left: 14, right: 14 },
+    });
+    autoTable(doc, {
+      startY: finalY() + 4,
+      head: [["Comparable", "EV/EBITDA", "P/E"]],
+      body: [...rel.peers.map((p) => [p.name, `${p.evEbitda.toFixed(1)}x`, `${p.pe.toFixed(1)}x`]), ["Median", `${rel.evMultMid.toFixed(1)}x`, `${rel.peMultMid.toFixed(1)}x`]],
+      styles: { fontSize: 8, cellPadding: 1.4, textColor: INK }, headStyles: { fillColor: GREEN, textColor: 255 },
+      columnStyles: { 1: { halign: "right" }, 2: { halign: "right" } }, margin: { left: 14, right: 14 },
+    });
+  }
 
   if (notes && notes.trim()) {
     doc.addPage(); let y = 20;
