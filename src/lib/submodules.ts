@@ -209,6 +209,7 @@ export const SUBMODULES: Record<ModuleKey, SubModuleDef[]> = {
 
   finance: [
     { slug: "", name: "Reconciliation", status: "beta" },
+    { slug: "statements", name: "Financial Statements", status: "live", custom: true },
     { slug: "cash-report", name: "Daily Cash Report", status: "live", custom: true },
     { slug: "general-ledger", name: "General Ledger", status: "live", custom: true },
     { slug: "trial-balance", name: "Trial Balance", status: "live", custom: true },

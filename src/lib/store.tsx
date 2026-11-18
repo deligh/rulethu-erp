@@ -3,6 +3,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { cloudEnabled, cloudLoad, cloudSave, cloudSubscribe } from "./cloud";
 import { JournalEntry, OPENING_ENTRY } from "./coa";
+import { SAMPLE_JOURNALS } from "./finseed";
+import type { PeriodType, PeriodReport } from "./finperiods";
 import {
   DEALS, LOANS, PURCHASE_ORDERS, REPORTS, ALT_ASSETS, EMPLOYEES,
   Deal, Loan, PurchaseOrder, ResearchReport, AltAsset, Employee,
@@ -377,9 +379,24 @@ export interface KnowledgeDoc {
   createdAt: string;
 }
 
+// Published financial statements — a frozen snapshot of a period's statements
+// plus the management commentary, finalised by Finance before publishing.
+export interface FinStatement {
+  id: string;
+  periodType: PeriodType;
+  label: string;
+  start: string;
+  end: string;
+  commentary: string;
+  report: PeriodReport;   // frozen figures at publish time
+  publishedBy: string;
+  publishedAt: string;
+}
+
 // Collections that support generic add / patch.
 interface Collections {
   knowledge: KnowledgeDoc[];
+  finStatements: FinStatement[];
   deals: Deal[];
   loans: Loan[];
   pos: PurchaseOrder[];
@@ -426,7 +443,7 @@ interface AppData extends Collections {
 
 // Deterministic seed (same on server + first client render → no hydration mismatch).
 const SEED: AppData = {
-  entries: [OPENING_ENTRY],
+  entries: [OPENING_ENTRY, ...SAMPLE_JOURNALS],
   leave: [
     { id: "LV-1001", employee: "Gamu", type: "Annual", start: "2026-09-15", end: "2026-09-19", days: 5, reason: "Family time", status: "Approved", createdAt: "2026-09-08T09:00:00Z" },
     { id: "LV-1002", employee: "Blessed", type: "Study", start: "2026-10-02", end: "2026-10-03", days: 2, reason: "CFA exam", status: "Pending", createdAt: "2026-09-12T09:00:00Z" },
@@ -508,6 +525,7 @@ const SEED: AppData = {
     { id: "BN-3", author: "Gamu", text: "Dry-Port: corridor volumes +6% q/q", color: "var(--lz-green-bg)", x: 70, y: 22, createdAt: "2026-11-16T00:00:00Z" },
   ],
   knowledge: [],
+  finStatements: [],
   holdings: [
     { id: "H-1", company: "Lithium Off-take SPV", sector: "Mining & Resources", stage: "Private Credit", invested: 30_000_000, fairValue: 21_500_000, ownership: 100, entryDate: "2025-08-05", status: "Watch", lead: "Blessed", note: "Lithium price soft; off-take economics under review.", createdAt: "2025-08-05T00:00:00Z" },
     { id: "H-2", company: "Harare Logistics Park", sector: "Real Estate", stage: "Real Assets", invested: 9_200_000, fairValue: 10_800_000, ownership: 65, entryDate: "2024-11-12", status: "Performing", lead: "Gamu", note: "Occupancy 94%; USD leases.", createdAt: "2024-11-12T00:00:00Z" },
@@ -532,6 +550,7 @@ interface Ctx extends AppData {
   hydrated: boolean;
   // finance / workflow-specific
   addEntry: (memo: string, source: string, lines: JournalEntry["lines"], date?: string) => void;
+  importJournals: (rows: JournalEntry[]) => void;
   addLeave: (r: Omit<LeaveRequest, "id" | "status" | "createdAt">) => void;
   setLeaveStatus: (id: string, status: LeaveStatus) => void;
   addClaim: (c: Omit<TravelClaim, "id" | "status" | "createdAt">) => void;
@@ -648,6 +667,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       ...d,
       entries: [...d.entries, { id: uid("JE"), date: date ?? new Date().toISOString().slice(0, 10), memo, source, lines }],
       notifications: [mkNote("Journal posted", memo, "finance"), ...d.notifications],
+    }));
+  }, []);
+
+  // Append many journals at once (e.g. sample/imported postings) with a single notification.
+  const importJournals: Ctx["importJournals"] = useCallback((rows) => {
+    setData((d) => ({
+      ...d,
+      entries: [...d.entries, ...rows],
+      notifications: [mkNote("Postings imported", `${rows.length} journal entries added to the ledger`, "finance"), ...d.notifications],
     }));
   }, []);
 
@@ -857,7 +885,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const value: Ctx = {
     ...data,
     hydrated,
-    addEntry, addLeave, setLeaveStatus, addClaim, setClaimStatus, addMessage, addChannel, addChannelMember, markAllRead, markNoteRead, notify, add, patch, remove, resetAll,
+    addEntry, importJournals, addLeave, setLeaveStatus, addClaim, setClaimStatus, addMessage, addChannel, addChannelMember, markAllRead, markNoteRead, notify, add, patch, remove, resetAll,
     raiseRequest, fulfilRequest, setRequestStatus, setMarket, setDigestDate, setChannelContext, addChannelInsight, publishReport,
   };
 
