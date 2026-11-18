@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { computeProjectFinance, pfSensitivity, ProjectFinanceInputs } from "@/lib/finmodels";
 import { Section, NumField, Tabs, ModelKpis, ModelChartCard, ModelTableCard, GridTable } from "@/components/model/ModelKit";
+import ModelExportBar from "@/components/model/ModelExportBar";
 import { PageHeader, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
 
@@ -72,6 +73,8 @@ function PlantInner() {
 
       <Tabs items={TAB_ITEMS} value={tab} onChange={setTab} />
 
+      <ModelExportBar name={PRESETS[presetKey].label} sector={PRESETS[presetKey].sector} result={r} />
+
       {tab === "overview" && (
         <div className="flex flex-col lg:flex-row gap-6 items-start">
           <div className="w-full lg:w-[380px] lg:shrink-0">
@@ -96,11 +99,13 @@ function PlantInner() {
               <NumField label="Interest rate" value={inp.interestRate * 100} onChange={(v) => set("interestRate", v / 100)} suffix="%" step={0.25} />
               <NumField label="Debt tenor" value={inp.debtTenorYears} onChange={(v) => set("debtTenorYears", v)} suffix="yrs" step={1} />
             </Section>
-            <Section title="Tax & discounting" cols={2}>
+            <Section title="Tax, working capital & discounting" cols={2}>
               <NumField label="Tax rate" value={inp.taxRate * 100} onChange={(v) => set("taxRate", v / 100)} suffix="%" step={1} />
+              <NumField label="Working capital" value={(inp.wcPctOfRevenue ?? 0) * 100} onChange={(v) => set("wcPctOfRevenue", v / 100)} suffix="% of rev" step={1} />
               <NumField label="Discount rate" value={inp.discountRate * 100} onChange={(v) => set("discountRate", v / 100)} suffix="%" step={0.5} />
               <NumField label="Terminal growth" value={inp.terminalGrowthPct * 100} onChange={(v) => set("terminalGrowthPct", v / 100)} suffix="%" step={0.5} />
             </Section>
+            <p className="text-[11px] mt-2" style={{ color: "var(--text-faint)" }}>Engine models tax-loss carry-forward, working capital released at exit, and computes DSCR, LLCR and equity MOIC. Figures are indicative.</p>
           </div>
           <div className="flex-1 min-w-0 w-full space-y-4">
             <ModelKpis kpis={r.kpis} />

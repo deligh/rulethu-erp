@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { computeOpco, opcoSensitivity, OpcoInputs, OpcoLine } from "@/lib/finmodels";
 import { NumField, Tabs, ModelKpis, ModelChartCard, ModelTableCard, GridTable } from "@/components/model/ModelKit";
+import ModelExportBar from "@/components/model/ModelExportBar";
 import { PageHeader, Card } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
 
@@ -52,6 +53,7 @@ export default function OpcoModel() {
       />
       <ModuleTabs moduleKey="investments" />
       <Tabs items={TAB_ITEMS} value={tab} onChange={setTab} />
+      <ModelExportBar name="Multi-service operating co." sector="Trade & Services" result={r} />
 
       {tab === "overview" && (
         <div className="space-y-4">

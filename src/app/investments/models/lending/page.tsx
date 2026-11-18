@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { computeLending, lendingSensitivity, LendingInputs } from "@/lib/finmodels";
 import { Section, NumField, Tabs, ModelKpis, ModelChartCard, ModelTableCard, GridTable } from "@/components/model/ModelKit";
+import ModelExportBar from "@/components/model/ModelExportBar";
 import { PageHeader } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
 
@@ -42,6 +43,7 @@ export default function LendingModel() {
       />
       <ModuleTabs moduleKey="investments" />
       <Tabs items={TAB_ITEMS} value={tab} onChange={setTab} />
+      <ModelExportBar name="Lending / Microfinance" sector="Financial services" result={r} />
 
       {tab === "overview" && (
         <div className="flex flex-col lg:flex-row gap-6 items-start">

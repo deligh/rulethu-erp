@@ -50,6 +50,7 @@ export interface ModelResult {
   rows: RowOut[];
   bars: { label: string; value: number }[];
   note?: string;
+  assumptions?: { label: string; value: string }[]; // for export / audit trail
 }
 
 /* ===================== 1. PROJECT FINANCE (solar / plant) ============== */
@@ -74,6 +75,7 @@ export interface ProjectFinanceInputs {
   taxRate: number;
   discountRate: number;
   terminalGrowthPct: number;
+  wcPctOfRevenue?: number;   // working capital as % of revenue (released at exit)
 }
 
 export function computeProjectFinance(i: ProjectFinanceInputs): ModelResult {
@@ -81,13 +83,15 @@ export function computeProjectFinance(i: ProjectFinanceInputs): ModelResult {
   const debt = i.capex * i.debtPct;
   const equity = i.capex - debt;
   const inst = pmt(i.interestRate, i.debtTenorYears, debt);
+  const wcPct = i.wcPctOfRevenue ?? 0;
 
   const cols = ["Year 0"];
   const outputR: number[] = [0], revR: number[] = [0], opexR: number[] = [0], ebitdaR: number[] = [0];
   const depR: number[] = [0], intR: number[] = [0], taxR: number[] = [0], niR: number[] = [0];
+  const wcR: number[] = [0], cfadsR: number[] = [NaN];
   const dsR: number[] = [0], dscrR: number[] = [NaN], pfcf: number[] = [-i.capex], efcf: number[] = [-equity];
   let bal = debt;
-  let pvOutput = 0, pvCost = 0;
+  let pvOutput = 0, pvCost = 0, prevWC = 0, lossCF = 0, pvCFADS = 0;
 
   for (let y = 1; y <= N; y++) {
     cols.push(`Y${y}`);
@@ -103,20 +107,31 @@ export function computeProjectFinance(i: ProjectFinanceInputs): ModelResult {
     const principal = y <= i.debtTenorYears ? inst - interest : 0;
     bal = Math.max(0, bal - principal);
     const ebit = ebitda - dep;
-    const taxable = ebit - interest;
-    const tax = Math.max(0, taxable * i.taxRate);
-    const ni = taxable - tax;
-    const cfads = ebitda - tax;
+    const taxableBeforeLoss = ebit - interest;
+    // tax-loss carry-forward: offset taxable profit with accumulated losses
+    const usableLoss = Math.min(Math.max(taxableBeforeLoss, 0), lossCF);
+    const taxableNet = Math.max(0, taxableBeforeLoss - usableLoss);
+    lossCF -= usableLoss;
+    if (taxableBeforeLoss < 0) lossCF += -taxableBeforeLoss;
+    const tax = taxableNet * i.taxRate;
+    const ni = taxableBeforeLoss - tax;
+    // working capital movement (built up as a % of revenue, fully released at exit)
+    const wc = y === N ? 0 : wcPct * revenue;
+    const dWCeff = wc - prevWC; // + = cash tied up; - = released
+    prevWC = wc;
+    const cfads = ebitda - tax - dWCeff;
     const debtService = interest + principal;
     const dscr = debtService > 0 ? cfads / debtService : NaN;
     outputR.push(output); revR.push(revenue); opexR.push(opex); ebitdaR.push(ebitda);
     depR.push(dep); intR.push(interest); taxR.push(tax); niR.push(ni);
+    wcR.push(dWCeff); cfadsR.push(cfads);
     dsR.push(debtService); dscrR.push(dscr);
-    pfcf.push(ebitda - tax);
-    efcf.push(ebitda - tax - debtService);
+    pfcf.push(ebitda - tax - dWCeff);
+    efcf.push(ebitda - tax - dWCeff - debtService);
     const df = Math.pow(1 + i.discountRate, y);
     pvOutput += output / df;
     pvCost += (opex + tax) / df;
+    if (y <= i.debtTenorYears) pvCFADS += cfads / Math.pow(1 + i.interestRate, y);
   }
   // terminal value on last-year unlevered FCF
   const g = i.terminalGrowthPct;
@@ -130,15 +145,22 @@ export function computeProjectFinance(i: ProjectFinanceInputs): ModelResult {
   const pb = paybackYears(pfcf);
   const dscrVals = dscrR.filter((d) => isFinite(d));
   const minDSCR = dscrVals.length ? Math.min(...dscrVals) : NaN;
+  const avgDSCR = dscrVals.length ? dscrVals.reduce((s, d) => s + d, 0) / dscrVals.length : NaN;
+  const llcr = debt > 0 ? pvCFADS / debt : NaN;
+  const eqDistributions = efcfT.slice(1).reduce((s, v) => s + v, 0);
+  const moic = equity > 0 ? eqDistributions / equity : NaN;
   const lcoe = pvOutput > 0 ? (i.capex + pvCost) / pvOutput : NaN;
   const y1margin = revR[1] ? ebitdaR[1] / revR[1] : NaN;
 
   const kpis: KpiOut[] = [
     { label: "Project IRR", value: pct(projIRR), tone: projIRR >= i.discountRate ? "pos" : "neg", hint: `vs WACC ${pct(i.discountRate, 0)}` },
-    { label: "Equity IRR", value: pct(eqIRR), tone: "pos" },
-    { label: "Project NPV", value: money(projNPV), tone: projNPV >= 0 ? "pos" : "neg" },
+    { label: "Equity IRR", value: pct(eqIRR), tone: eqIRR >= i.discountRate ? "pos" : "neg", hint: "levered, to equity" },
+    { label: "Project NPV", value: money(projNPV), tone: projNPV >= 0 ? "pos" : "neg", hint: `@ ${pct(i.discountRate, 0)}` },
+    { label: "Equity MOIC", value: isFinite(moic) ? `${moic.toFixed(2)}x` : "—", hint: "cash returned ÷ invested" },
     { label: "Payback", value: isFinite(pb) ? `${pb.toFixed(1)} yrs` : "—" },
-    { label: "Min DSCR", value: isFinite(minDSCR) ? `${minDSCR.toFixed(2)}x` : "—", tone: minDSCR >= 1.2 ? "pos" : "neg" },
+    { label: "Min DSCR", value: isFinite(minDSCR) ? `${minDSCR.toFixed(2)}x` : "—", tone: minDSCR >= 1.2 ? "pos" : "neg", hint: "lenders want >1.2x" },
+    { label: "Avg DSCR", value: isFinite(avgDSCR) ? `${avgDSCR.toFixed(2)}x` : "—" },
+    { label: "LLCR", value: isFinite(llcr) ? `${llcr.toFixed(2)}x` : "—", tone: llcr >= 1.3 ? "pos" : "neg", hint: "loan-life cover" },
     i.energy
       ? { label: "LCOE", value: isFinite(lcoe) ? `$${(i.unit === "MWh" ? lcoe / 1000 : lcoe).toFixed(3)}/${i.unit === "MWh" ? "kWh" : i.unit}` : "—" }
       : { label: "EBITDA margin", value: pct(y1margin, 0) },
@@ -153,13 +175,37 @@ export function computeProjectFinance(i: ProjectFinanceInputs): ModelResult {
     { label: "Interest", cells: intR.map((v, idx) => (idx === 0 ? "—" : "(" + money(v) + ")")) },
     { label: "Tax", cells: taxR.map((v, idx) => (idx === 0 ? "—" : "(" + money(v) + ")")) },
     { label: "Net income", cells: niR.map((v, idx) => (idx === 0 ? "—" : money(v))), strong: true },
+    ...(wcPct > 0 ? [{ label: "Δ Working capital", cells: wcR.map((v, idx) => (idx === 0 ? "—" : "(" + money(v) + ")")) }] : []),
+    { label: "CFADS", cells: cfadsR.map((v) => (isFinite(v) ? money(v) : "—")) },
     { label: "Debt service", cells: dsR.map((v, idx) => (idx === 0 ? "—" : money(v))) },
     { label: "DSCR", cells: dscrR.map((v) => (isFinite(v) ? v.toFixed(2) + "x" : "—")) },
     { label: "Project FCF", cells: pfcf.map((v) => money(v)), strong: true },
     { label: "Equity FCF", cells: efcf.map((v) => money(v)) },
   ];
 
-  return { kpis, columns: cols, rows, bars: pfcf.map((v, idx) => ({ label: `Y${idx}`, value: v })) };
+  const assumptions: { label: string; value: string }[] = [
+    { label: "Capex", value: money(i.capex) },
+    { label: "Gearing (debt %)", value: pct(i.debtPct, 0) },
+    { label: "Debt / Equity", value: `${money(debt)} / ${money(equity)}` },
+    { label: "Interest rate", value: pct(i.interestRate, 1) },
+    { label: "Debt tenor", value: `${i.debtTenorYears} yrs` },
+    { label: "Operating years", value: `${N}` },
+    { label: `Annual output (${i.unit})`, value: num(i.annualOutput, 0) },
+    { label: "Utilisation", value: pct(i.utilizationPct, 0) },
+    ...(i.degradationPct ? [{ label: "Degradation p.a.", value: pct(i.degradationPct, 1) }] : []),
+    { label: "Price / unit", value: money(i.pricePerUnit) },
+    { label: "Price escalation", value: pct(i.priceEscalationPct, 1) },
+    { label: "Variable cost / unit", value: money(i.variableCostPerUnit) },
+    { label: "Fixed opex", value: money(i.fixedOpex) },
+    { label: "Opex escalation", value: pct(i.opexEscalationPct, 1) },
+    { label: "Depreciation life", value: `${i.depreciationYears} yrs` },
+    { label: "Tax rate", value: pct(i.taxRate, 0) },
+    ...(wcPct ? [{ label: "Working capital", value: `${pct(wcPct, 0)} of revenue` }] : []),
+    { label: "Discount rate (WACC)", value: pct(i.discountRate, 1) },
+    { label: "Terminal growth", value: pct(i.terminalGrowthPct, 1) },
+  ];
+
+  return { kpis, columns: cols, rows, bars: pfcf.map((v, idx) => ({ label: `Y${idx}`, value: v })), assumptions };
 }
 
 /* ===================== 2. AGRI-OUTGROWER (blueberry) ================== */
