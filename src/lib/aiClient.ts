@@ -30,6 +30,10 @@ export interface AskOpts {
   webSearch?: boolean;
   /** Max web searches allowed (cost/latency control; default 8 server-side). */
   searchMaxUses?: number;
+  /** Let Claude FETCH specific trusted URLs directly (reliable prices). */
+  webFetch?: boolean;
+  /** Max direct fetches allowed. */
+  fetchMaxUses?: number;
   /** ms before we give up and fall back to demo mode (default 30s). */
   timeoutMs?: number;
 }
@@ -61,10 +65,12 @@ export async function askClaude(opts: AskOpts): Promise<string | null> {
   if (opts.maxTokens) body.max_tokens = opts.maxTokens;
   if (opts.webSearch) body.web_search = true;
   if (opts.searchMaxUses) body.search_max_uses = opts.searchMaxUses;
+  if (opts.webFetch) body.web_fetch = true;
+  if (opts.fetchMaxUses) body.fetch_max_uses = opts.fetchMaxUses;
 
   const ctrl = new AbortController();
-  // Web search takes longer (multiple round-trips server-side).
-  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? (opts.webSearch ? 60_000 : 30_000));
+  // Web search / fetch take longer (multiple round-trips server-side).
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? (opts.webSearch || opts.webFetch ? 60_000 : 30_000));
 
   try {
     const r = await fetch(FN_URL, {

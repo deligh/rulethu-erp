@@ -131,16 +131,23 @@ export async function fetchMarketDigest(): Promise<MarketSnapshot> {
     const text = await askClaude({
       system: MARKET_SYSTEM,
       prompt:
-        `RIGHT NOW it is ${nowStr} Central Africa Time (UTC+2). TODAY is ${todayStr}. ` +
-        "Produce TODAY's Rulethu market brief with the LATEST available prices — search for today's numbers " +
-        `(e.g. 'gold price today ${todayStr}', 'brent crude price today', 'lithium carbonate price today', 'ZSE all share index today'). ` +
-        "Use the most recent figure you can find; if a market is closed or only a prior session's close is available, say so in `change` " +
-        "(e.g. 'prev close') rather than presenting an old number as live. In each story and the commentary, make it clearly about TODAY " +
-        "and reference how recent each figure is. Do AT MOST 4 web searches total, then return ONLY the JSON object. Do not keep searching.",
+        `RIGHT NOW it is ${nowStr} Central Africa Time (UTC+2). TODAY is ${todayStr}. Produce TODAY's Rulethu market brief with the LATEST real prices.\n` +
+        "PRICES — use the web_fetch tool to read these exact pages directly (do NOT rely on open web search for prices):\n" +
+        "• Gold spot ($/oz): fetch https://goldprice.org/ (or https://www.kitco.com/charts/gold)\n" +
+        "• Platinum ($/oz): fetch https://www.kitco.com/charts/platinum\n" +
+        "• Brent Crude ($/bbl): fetch https://oilprice.com/\n" +
+        "• Lithium carbonate (per tonne): fetch https://tradingeconomics.com/commodity/lithium\n" +
+        "• ZSE All Share Index: fetch https://www.zse.co.zw/ (or https://www.african-markets.com/en/stock-markets/zse)\n" +
+        "Read the current number from each page. Only if a fetch genuinely returns nothing, use web_search as a fallback for that one item; " +
+        "if still unavailable, give your best recent figure and set `change` to 'n/a' — but DO fetch first, do not skip to estimates.\n" +
+        "NEWS — then do up to 2 web_search calls for today's market & Africa/SADC headlines to write the `stories`.\n" +
+        "Return ONLY the JSON object once you have the prices.",
+      webFetch: true,
+      fetchMaxUses: 6,
       webSearch: true,
-      searchMaxUses: 4,
+      searchMaxUses: 3,
       maxTokens: 4500,
-      timeoutMs: 120_000,
+      timeoutMs: 125_000,
     });
     const parsed = text ? parseDigest(text) : null;
     if (parsed && parsed.prices && parsed.prices.length) {

@@ -65,6 +65,8 @@ Deno.serve(async (req: Request) => {
     max_tokens?: number;
     web_search?: boolean;
     search_max_uses?: number;   // client-tunable so we never redeploy to adjust
+    web_fetch?: boolean;        // fetch specific trusted URLs (prices) directly
+    fetch_max_uses?: number;
   };
   try {
     payload = await req.json();
@@ -83,8 +85,9 @@ Deno.serve(async (req: Request) => {
   );
   if (!anyText) return json({ error: "Empty prompt." }, 400);
 
-  // Web search needs a model that supports the dynamic tool → use Sonnet.
-  const model = payload.web_search
+  // Server tools (web search / web fetch) need a model that supports them → Sonnet.
+  const usesServerTool = !!(payload.web_search || payload.web_fetch);
+  const model = usesServerTool
     ? "claude-sonnet-5-5"
     : payload.model && ALLOWED.has(payload.model)
       ? payload.model
@@ -94,25 +97,47 @@ Deno.serve(async (req: Request) => {
     MAX_TOKENS_CAP,
   );
 
+  // Trusted sources the model may FETCH directly (host only, no protocol). These
+  // are Rulethu's standard daily-report sources — fetching them is deterministic
+  // and does not consume the web-search quota.
+  const FETCH_DOMAINS = [
+    "kitco.com", "www.kitco.com", "goldprice.org", "oilprice.com",
+    "tradingeconomics.com", "zse.co.zw", "www.zse.co.zw", "african-markets.com",
+    "africanfinancials.com", "rbz.co.zw", "www.rbz.co.zw", "cmegroup.com",
+    "www.cmegroup.com", "home.treasury.gov", "markets.ft.com",
+    "newyorkfed.org", "www.newyorkfed.org", "goldprice.org",
+  ];
+
   const base: Record<string, unknown> = { model, max_tokens };
   if (payload.system) base.system = payload.system;
+  const tools: unknown[] = [];
+  if (payload.web_fetch) {
+    const fetchUses = Math.min(Math.max(1, payload.fetch_max_uses ?? 5), 8);
+    tools.push({
+      type: "web_fetch_20260209",
+      name: "web_fetch",
+      max_uses: fetchUses,
+      max_content_tokens: 6000,
+      allowed_domains: FETCH_DOMAINS,
+    });
+  }
   if (payload.web_search) {
-    // Bounded so the function stays well under Supabase's resource/time limit:
-    // few searches, and cap how much page content each search injects.
-    const maxUses = Math.min(Math.max(1, payload.search_max_uses ?? 4), 5);
-    base.tools = [{
+    const maxUses = Math.min(Math.max(1, payload.search_max_uses ?? 4), 6);
+    tools.push({
       type: "web_search_20260209",
       name: "web_search",
       max_uses: maxUses,
       max_content_tokens: 5000,
-    }];
+    });
   }
+  if (tools.length) base.tools = tools;
 
   try {
     let usage: unknown = null;
-    // Server-tool loop: resend while Claude pauses to run web search.
-    // Capped low — each extra round is another full upstream call.
-    for (let i = 0; i < 4; i++) {
+    // Server-tool loop: resend while Claude pauses to run web fetch / search.
+    // Capped — each extra round is another full upstream call (watch the 150s limit).
+    const rounds = usesServerTool ? 6 : 2;
+    for (let i = 0; i < rounds; i++) {
       const r = await fetch(ANTHROPIC_URL, {
         method: "POST",
         headers: {
