@@ -40,6 +40,7 @@ export const SUBMODULES: Record<ModuleKey, SubModuleDef[]> = {
   ai: [
     { slug: "", name: "Assistant", status: "live" },
     { slug: "studio", name: "Document Studio", status: "live", custom: true },
+    { slug: "meetings", name: "Meeting Notes", status: "live", custom: true },
     { slug: "templates", name: "Templates", status: "live", custom: true },
   ],
   workspace: [],
