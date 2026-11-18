@@ -11,6 +11,28 @@ interface Action { owner: string; task: string; due?: string }
 interface Minutes { title: string; summary: string; keyPoints: string[]; decisions: string[]; actions: Action[] }
 
 const todayPlus = (days: number) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+const TODAY = new Date().toISOString().slice(0, 10);
+
+// Robustly pull the LAST complete, parseable top-level JSON object from a
+// model reply — handles fenced code, preambles, and "Correction: ... here is
+// the final JSON" repetitions where several {...} blocks appear.
+function extractJson(raw: string): Record<string, unknown> | null {
+  if (!raw) return null;
+  let t = raw.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const candidates: string[] = [];
+  let depth = 0, start = -1;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (ch === "{") { if (depth === 0) start = i; depth++; }
+    else if (ch === "}") { depth--; if (depth === 0 && start >= 0) { candidates.push(t.slice(start, i + 1)); start = -1; } }
+  }
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    try { const o = JSON.parse(candidates[i]); if (o && typeof o === "object") return o as Record<string, unknown>; } catch { /* try next */ }
+  }
+  return null;
+}
 
 export default function MeetingNotesPage() {
   const { employees, add, addMessage, channels } = useAppData();
@@ -28,28 +50,35 @@ export default function MeetingNotesPage() {
     const text = await askClaude({
       system:
         "You are Rulethu AI's meeting assistant at an African investment group in Harare. Turn rough meeting notes into clean minutes. " +
-        "Return ONLY a JSON object (no markdown, no fences): " +
-        '{"title": string, "summary": string, "keyPoints": [string], "decisions": [string], "actions": [{"owner": string, "task": string, "due": "yyyy-mm-dd"}]}. ' +
-        "Assign each action to the most appropriate person FROM THIS TEAM by their exact name: " + team + ". " +
-        "If no clear owner, use the best fit. Keep it concise and specific; infer sensible due dates when none are stated.",
-      prompt: `MEETING NOTES:\n${notes.trim()}\n\nProduce the minutes JSON now.`,
+        `Today's date is ${TODAY}; any due dates you infer must be in the future relative to today. ` +
+        "Respond with a SINGLE JSON object and ABSOLUTELY NOTHING ELSE: no markdown, no code fences, no preamble, no commentary, no 'Correction', and never repeat the JSON. " +
+        'Shape exactly: {"title": string, "summary": string, "keyPoints": [string], "decisions": [string], "actions": [{"owner": string, "task": string, "due": "yyyy-mm-dd"}]}. ' +
+        "For each action, set owner to the EXACT name (no role or bracket) of the most appropriate person from this team: " + team + ". " +
+        "If no clear owner, pick the best fit. Keep it concise and specific.",
+      prompt: `MEETING NOTES:\n${notes.trim()}\n\nReturn the minutes JSON now — the JSON object only.`,
       model: "sonnet",
       maxTokens: 2000,
     });
-    try {
-      let t = (text ?? "").trim();
-      const f = t.match(/```(?:json)?\s*([\s\S]*?)```/i); if (f) t = f[1];
-      const a = t.indexOf("{"), b = t.lastIndexOf("}"); if (a >= 0 && b > a) t = t.slice(a, b + 1);
-      const o = JSON.parse(t);
+    const o = extractJson(text ?? "");
+    if (o) {
+      const names = employees.map((e) => e.name);
+      const normalizeOwner = (raw: string): string => {
+        const bare = raw.replace(/\s*\(.*?\)\s*/g, "").trim();            // strip "(Investments)" etc.
+        const hit = names.find((n) => n.toLowerCase() === bare.toLowerCase())
+          ?? names.find((n) => bare && (n.toLowerCase().includes(bare.toLowerCase()) || bare.toLowerCase().includes(n.toLowerCase())));
+        return hit ?? bare;
+      };
       setMin({
         title: String(o.title ?? "Meeting minutes"),
         summary: String(o.summary ?? ""),
         keyPoints: Array.isArray(o.keyPoints) ? o.keyPoints.map(String) : [],
         decisions: Array.isArray(o.decisions) ? o.decisions.map(String) : [],
-        actions: Array.isArray(o.actions) ? o.actions.map((x: Record<string, unknown>) => ({ owner: String(x.owner ?? ""), task: String(x.task ?? ""), due: x.due ? String(x.due) : undefined })).filter((x: Action) => x.task) : [],
+        actions: Array.isArray(o.actions)
+          ? o.actions.map((x: Record<string, unknown>) => ({ owner: normalizeOwner(String(x.owner ?? "")), task: String(x.task ?? ""), due: x.due ? String(x.due) : undefined })).filter((x: Action) => x.task)
+          : [],
       });
-    } catch {
-      setMin({ title: "Meeting minutes", summary: text ?? "Couldn't parse the minutes — try again.", keyPoints: [], decisions: [], actions: [] });
+    } else {
+      setMin({ title: "Couldn't read that", summary: "The AI didn't return clean minutes. Try again, or shorten the notes a little.", keyPoints: [], decisions: [], actions: [] });
     }
     setBusy(false);
   };
