@@ -113,6 +113,17 @@ html, body {
   font-family: var(--font-sans);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;              /* never scroll the page sideways on phones */
+  max-width: 100vw;
+}
+
+/* Media and embeds always fit the screen */
+img, svg, video, canvas, iframe { max-width: 100%; }
+
+/* Phone polish: tighter gutters and comfortable tap targets */
+@media (max-width: 640px) {
+  body { font-size: 13.5px; }
+  button, a, select, input { touch-action: manipulation; }
 }
 
 a { color: inherit; text-decoration: none; }
