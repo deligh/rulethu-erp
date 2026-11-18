@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { PageHeader, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
 import { fetchMarketDigest, needsRefresh } from "@/lib/news";
+import { aiLastError } from "@/lib/aiClient";
 
 function Bold({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -27,6 +28,7 @@ export default function DailyMarketPage() {
   const me = user?.name ?? "Rulethu";
   const [busy, setBusy] = useState(false);
   const [comment, setComment] = useState("");
+  const [diag, setDiag] = useState<string | null>(null);
   const triggered = useRef(false);
 
   const refresh = async () => {
@@ -35,6 +37,7 @@ export default function DailyMarketPage() {
       const snap = await fetchMarketDigest();
       // A real brief always wins. A demo brief only applies if we have nothing real.
       if (!snap.demo || !market || market.demo) setMarket(snap);
+      setDiag(snap.demo ? (aiLastError() ?? "The live market desk returned no data.") : null);
     } finally {
       setBusy(false);
     }
@@ -233,6 +236,11 @@ export default function DailyMarketPage() {
                   <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="text-[11px] underline" style={{ color: "var(--brand)" }}>{s.label} ↗</a>
                 ))}
               </div>
+            </div>
+          )}
+          {market.demo && diag && (
+            <div className="mt-3 rounded-md border px-3 py-2 text-[11px]" style={{ borderColor: "var(--neg)", background: "color-mix(in srgb, var(--neg) 8%, transparent)", color: "var(--neg)" }}>
+              <b>Why no live data:</b> {diag}
             </div>
           )}
           <div className="mt-4 text-[11px]" style={{ color: "var(--text-faint)" }}>

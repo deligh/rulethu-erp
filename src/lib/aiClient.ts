@@ -50,6 +50,12 @@ export function aiLiveState(): boolean | null {
   return liveKnown;
 }
 
+// Last error from the proxy (for diagnostics on the market desk etc.).
+let lastError: string | null = null;
+export function aiLastError(): string | null {
+  return lastError;
+}
+
 /**
  * Ask Claude via the secure proxy. Returns the text, or `null` to signal the
  * caller should use its demo fallback (not configured / no key / error).
@@ -90,13 +96,17 @@ export async function askClaude(opts: AskOpts): Promise<string | null> {
     if (!r.ok) {
       // 503 = key secret not set → treat as "demo only" for this session.
       if (r.status === 503) liveKnown = false;
+      lastError = (typeof data?.error === "string" ? data.error : `HTTP ${r.status}`);
       return null;
     }
 
     liveKnown = true;
     const text = typeof data?.text === "string" ? data.text.trim() : "";
+    if (!text) lastError = "The AI returned an empty response.";
+    else lastError = null;
     return text || null;
-  } catch {
+  } catch (e) {
+    lastError = (e as Error)?.name === "AbortError" ? "Timed out waiting for the AI (web fetch/search took too long)." : "Could not reach the AI service.";
     return null;
   } finally {
     clearTimeout(timer);
