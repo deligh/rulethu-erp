@@ -6,6 +6,7 @@ import { defaults, clampInput } from "@/lib/lab/types";
 import { LABS, labById, askLab, briefFromResult, SUGGESTIONS } from "@/lib/lab/ask";
 import { runPower, SOURCE_META, type SourceKey } from "@/lib/lab/power";
 import { HourlyChart, RankBars } from "./LabCharts";
+import SolarWorld from "./SolarWorld";
 import { downloadBrief } from "@/lib/lab/brief";
 
 type Saved = { id: string; lab: string; name: string; inputs: Inputs };
@@ -197,7 +198,7 @@ export default function LabApp() {
         <div className="max-w-[1400px] mx-auto px-4 md:px-8 pt-5 pb-6">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
-              <div className="text-[11px] tracking-[0.2em] uppercase" style={{ color: "#f3d675" }}>Minister&apos;s Desk</div>
+              <a href="/desk/" className="text-[11px] tracking-[0.2em] uppercase hover:underline" style={{ color: "#f3d675" }}>← Minister&apos;s Desk</a>
               <h1 className="text-2xl md:text-3xl font-bold leading-tight mt-0.5">Economic Lab</h1>
               <p className="text-sm mt-1 opacity-85 max-w-xl">Ask any question about Zimbabwe&apos;s economy. Move the sliders, and every number, chart and brief recalculates instantly, with sources and working shown.</p>
             </div>
@@ -368,6 +369,19 @@ export default function LabApp() {
                   items={(Object.keys(powerOut.bySource) as SourceKey[]).filter((k) => powerOut.bySource[k] > 0.5).map((k) => ({ label: `${SOURCE_META[k].label} (MWh/day)`, value: Math.round(powerOut.bySource[k]), highlight: k === "solar" || k === "battery" })).sort((a, b) => b.value - a.value)}
                 />
               </Card>
+            )}
+
+            {powerOut && (
+              <SolarWorld
+                o={powerOut}
+                year={inputs.year}
+                onApply={(solarMW, batteryMW) => {
+                  setUndo({ lab: labId, inputs });
+                  setByLab((b) => ({ ...b, power: { ...b.power, solar: Math.min(10000, b.power.solar + solarMW), battery: Math.min(6000, b.power.battery + batteryMW) } }));
+                  setScenario(`${scenario} + solar & storage`); setPlan(null); setBrief(null);
+                  topRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              />
             )}
 
             {/* Link to another lab */}

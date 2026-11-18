@@ -53,8 +53,8 @@ export const POWER_INPUTS: InputSpec[] = [
   { key: "thermalsAvail", label: "Small thermals (Harare, Bulawayo, Munyati)", unit: "% of 270 MW", min: 0, max: 80, step: 5, default: 10, group: G.supply, aliases: ["thermal", "munyati", "harare station", "bulawayo station"] },
   { key: "imports", label: "Imports (HCB, Eskom, ZESCO)", unit: "MW", min: 0, max: 800, step: 25, default: 150, group: G.supply, aliases: ["import", "imports", "eskom", "hcb"] },
 
-  { key: "solar", label: "Utility solar (grid)", unit: "MW", min: 0, max: 5000, step: 50, default: 100, group: G.build, source: "Approx. grid-connected solar IPPs, 2025", aliases: ["solar farm", "solar park", "solar"] },
-  { key: "battery", label: "Battery storage (4-hour)", unit: "MW", min: 0, max: 3000, step: 50, default: 0, group: G.build, aliases: ["battery", "batteries", "storage", "bess"] },
+  { key: "solar", label: "Utility solar (grid)", unit: "MW", min: 0, max: 10000, step: 50, default: 100, group: G.build, source: "Approx. grid-connected solar IPPs, 2025", aliases: ["solar farm", "solar park", "solar"] },
+  { key: "battery", label: "Battery storage (4-hour)", unit: "MW", min: 0, max: 6000, step: 50, default: 0, group: G.build, aliases: ["battery", "batteries", "storage", "bess"] },
   { key: "rooftop", label: "Rooftop solar (homes & firms)", unit: "MW", min: 0, max: 2000, step: 25, default: 50, group: G.build, aliases: ["rooftop", "net metering"] },
   { key: "newHydro", label: "New hydro (e.g. Batoka share)", unit: "MW", min: 0, max: 1500, step: 50, default: 0, group: G.build, help: "Batoka Gorge = 2,400 MW shared with Zambia; earliest ~2032", aliases: ["batoka", "hydro"] },
   { key: "newCoal", label: "New coal plants", unit: "MW", min: 0, max: 2000, step: 50, default: 0, group: G.build, help: "Earliest ~2029 (build time)", aliases: ["coal"] },
@@ -246,7 +246,7 @@ export function powerInsights(i: Inputs, o: PowerOut): string[] {
   const out: string[] = [];
   if (o.gapMW > 1) {
     const solarAtWorst = i.solar * SOLAR_SHAPE[o.worstHour];
-    out.push(`The binding problem is ${hh(o.worstHour)}: we are ${mw(o.gapMW)} short at that hour. Solar delivers only ${mw(solarAtWorst)} then, so more solar alone will not end evening load-shedding.`);
+    out.push(`The binding problem is ${hh(o.worstHour)}: we are ${mw(o.gapMW)} short at that hour. Solar delivers only ${mw(solarAtWorst)} then, so more solar alone will not fix that hour — it needs storage or firm power.`);
   } else {
     out.push(`Supply covers demand in every hour of a typical day in ${i.year}. No load-shedding in this scenario.`);
   }
