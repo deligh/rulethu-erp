@@ -148,7 +148,7 @@ export default function MeetingNotesPage() {
         "For each action, set owner to the EXACT name (no role or bracket) of the most appropriate person from this team: " + team + ". " +
         "If no clear owner, pick the best fit. Keep it concise and specific.",
       prompt: `MEETING NOTES:\n${notes.trim()}\n\nReturn the minutes JSON now — the JSON object only.`,
-      model: "sonnet",
+      model: "haiku",   // structured JSON extraction is reliable on Haiku + the robust parser
       maxTokens: 2000,
     });
     const o = extractJson(text ?? "");

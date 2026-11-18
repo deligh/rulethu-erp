@@ -475,7 +475,7 @@ export async function answerQueryLive(query: string, snap: AiSnapshot, history?:
     const text = await askClaude({
       system: ASSISTANT_SYSTEM + " You are in a continuing conversation — remember what was said and answer follow-ups naturally.",
       messages,
-      model: "sonnet",
+      model: "haiku",   // high-frequency Q&A → cheapest model (Sonnet reserved for drafting & web search)
       maxTokens: 1800,
     });
     if (text) {
