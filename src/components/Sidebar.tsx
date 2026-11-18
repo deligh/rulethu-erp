@@ -48,7 +48,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className="hidden md:flex md:flex-col shrink-0 h-screen sticky top-0 border-r transition-[width] duration-200"
+      className="hidden md:flex md:flex-col shrink-0 h-full border-r transition-[width] duration-200"
       style={{ width: collapsed ? 64 : 248, background: "var(--sidebar-bg)", borderColor: "var(--border)" }}
     >
       {/* Brand / project switcher */}

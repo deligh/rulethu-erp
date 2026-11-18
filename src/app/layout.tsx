@@ -41,8 +41,13 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('rulethu-theme')||'system';var a=localStorage.getItem('rulethu-accent')||'green';var d=document.documentElement;var r=t==='system'?(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;d.setAttribute('data-theme',r);d.setAttribute('data-accent',a);}catch(e){}})();`,
+          }}
+        />
         <PWARegister />
         <AppDataProvider>
           <AuthProvider>
@@ -50,13 +55,13 @@ export default function RootLayout({
               <DigestRunner />
               <AskAI />
               <ChatBot />
-              <div className="flex min-h-screen">
+              <div className="rz-shell flex overflow-hidden">
                 <Sidebar />
-                <div className="flex flex-1 flex-col min-w-0">
+                <div className="flex flex-1 flex-col min-w-0 h-full overflow-hidden">
                   <Topbar />
-                  <div className="flex-1 flex flex-col min-w-0">
+                  <div className="rz-scroll flex-1 flex flex-col min-w-0">
                     <Breadcrumbs />
-                    <main className="flex-1 px-5 pb-8 pt-2 md:px-8 md:pb-10 max-w-[1440px] w-full mx-auto">
+                    <main className="flex-1 px-4 pb-8 pt-2 md:px-8 md:pb-10 max-w-[1440px] w-full mx-auto">
                       <DefaultPasswordBanner />
                       <AccessGuard><PageTransition>{children}</PageTransition></AccessGuard>
                     </main>

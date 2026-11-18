@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { NAV_MODULES } from "@/lib/modules";
 import NotificationsBell from "@/components/NotificationsBell";
+import ThemeControl from "@/components/ThemeControl";
 import CreateMenu from "@/components/CreateMenu";
 import Avatar from "@/components/Avatar";
 import { openAskAI } from "@/components/AskAI";
@@ -61,6 +62,7 @@ export default function Topbar() {
         <Link href="/comms" className="hidden sm:flex h-9 w-9 items-center justify-center rounded-md border" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }} title="Comms" aria-label="Comms">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>
         </Link>
+        <ThemeControl />
         <NotificationsBell />
         <div className="relative pl-1">
           <button onClick={() => setMenu((m) => !m)} className="flex items-center gap-2" title="Account">
