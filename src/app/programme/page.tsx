@@ -13,6 +13,7 @@ import QuickAdd from "@/components/QuickAdd";
 import TaskDrawer from "@/components/TaskDrawer";
 import Avatar from "@/components/Avatar";
 import { fmtDate } from "@/lib/format";
+import { tasksPdf } from "@/lib/docpdf";
 
 type GroupBy = "status" | "assignee" | "priority";
 const WORK_MODULES = MODULES.filter((m) => !["dashboard", "comms", "programme"].includes(m.key));
@@ -50,6 +51,40 @@ export default function ProjectBoardPage() {
   };
 
   const today = new Date().toISOString().slice(0, 10);
+  const exportPdf = () => {
+    const done = filtered.filter((t) => t.status === "Done").length;
+    const overdue = filtered.filter((t) => t.status !== "Done" && t.end < today).length;
+    const who = fAssignee === "all" ? "All assignees" : personById(fAssignee)?.name ?? "";
+    const scope = fModule === "all" ? "All projects" : moduleByKey(fModule as ModuleKey)?.name ?? fModule;
+    const rows = [...filtered]
+      .sort((a, b) => a.end.localeCompare(b.end))
+      .map((t) => [
+        t.title,
+        moduleByKey(t.module)?.name ?? t.module,
+        personById(t.assigneeId)?.name ?? t.assigneeId,
+        STATUS_LABEL[t.status],
+        t.priority,
+        `${Math.round((t.progress ?? 0) * 100)}%`,
+        fmtDate(t.end),
+      ]);
+    tasksPdf({
+      title: "Project Management snapshot",
+      subtitle: `${who} · ${scope}`,
+      stats: [
+        { label: "Tasks", value: String(filtered.length) },
+        { label: "Done", value: String(done) },
+        { label: "Open", value: String(filtered.length - done) },
+        { label: "Overdue", value: String(overdue) },
+      ],
+      columns: [
+        { header: "Task", width: 80 }, { header: "Project", width: 40 }, { header: "Assignee", width: 36 },
+        { header: "Status", width: 26 }, { header: "Priority", width: 22 }, { header: "Progress", width: 20 }, { header: "Due" },
+      ],
+      rows,
+      filename: `rulethu-project-snapshot-${today}`,
+    });
+  };
+
   const addTask = (v: Record<string, string>) => {
     const mod = WORK_MODULES.find((m) => m.name === v.module);
     const person = PEOPLE.find((p) => p.name === v.assignee);
@@ -74,6 +109,8 @@ export default function ProjectBoardPage() {
         title="Project Management"
         subtitle="Plan and track work across the whole group — Kanban board, task list, timeline and workload."
         actions={
+          <>
+          <button onClick={exportPdf} className="rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>⬇ Download PDF</button>
           <QuickAdd
             buttonLabel="New task"
             title="Create a task"
@@ -88,6 +125,7 @@ export default function ProjectBoardPage() {
               { key: "due", label: "Due date", type: "date" },
             ]}
           />
+          </>
         }
       />
 

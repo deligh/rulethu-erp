@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { askClaude } from "@/lib/aiClient";
 import { PageHeader, Card, Badge, SectionTitle } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
+import { minutesPdf } from "@/lib/docpdf";
 
 interface Action { owner: string; task: string; due?: string }
 interface Minutes { title: string; summary: string; keyPoints: string[]; decisions: string[]; actions: Action[] }
@@ -175,6 +176,7 @@ export default function MeetingNotesPage() {
               )}
               <div className="flex flex-wrap gap-2 pt-1">
                 {min.actions.length > 0 && <button onClick={createTasks} className="rounded-md px-3 py-2 text-sm font-semibold text-white" style={{ background: "var(--brand)" }}>Create {min.actions.length} task(s)</button>}
+                <button onClick={() => minutesPdf(min, user?.name)} className="rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>⬇ Download PDF</button>
                 <button onClick={postToComms} className="rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text)" }}>Post minutes to Comms</button>
                 {created && <span className="text-xs self-center" style={{ color: "var(--pos)" }}>{created}</span>}
               </div>
