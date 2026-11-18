@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { canAccessModule, seesEverything } from "@/lib/access";
 import { PageHeader, Card, StatCard, Badge, SectionTitle, Table, Th, Td } from "@/components/ui";
 import { fmtMoney, compact, fmtDate } from "@/lib/format";
+import { BarChart, Donut } from "@/components/Charts";
 
 export default function Dashboard() {
   const { deals, reports, alts, loans, tasks, employees, personalEvents, leave, goals } = useAppData();
@@ -149,6 +150,12 @@ export default function Dashboard() {
   const atRisk = loans.filter((l) => l.status === "PAR>30").reduce((s, l) => s + l.principal, 0);
   const recentDeals = [...deals].slice(0, 5);
 
+  // Chart data
+  const byStage = Object.entries(deals.reduce<Record<string, number>>((m, d) => { m[d.stage] = (m[d.stage] || 0) + d.ticket; return m; }, {}))
+    .map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+  const bySector = Object.entries(deals.reduce<Record<string, number>>((m, d) => { m[d.sector] = (m[d.sector] || 0) + d.ticket; return m; }, {}))
+    .map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+
   return (
     <div>
       <PageHeader
@@ -157,11 +164,22 @@ export default function Dashboard() {
         actions={<Badge tone="live">All systems nominal</Badge>}
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard label="Live pipeline" value={compact(pipelineValue, "USD")} delta={{ value: `${deals.length} deals`, positive: true }} hint="proposed tickets" />
         <StatCard label="Alt. investments NAV" value={compact(altNav, "USD")} delta={{ value: "4.1%", positive: true }} hint="vs. committed" />
         <StatCard label="MFI loan book" value={compact(loanBook, "USD")} hint={`${loans.length} active loans`} />
         <StatCard label="Portfolio at risk" value={compact(atRisk, "USD")} delta={{ value: "PAR>30", positive: false }} hint="flagged" />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4 mb-8">
+        <Card>
+          <div className="text-sm font-bold mb-3" style={{ color: "var(--text)" }}>Pipeline by stage</div>
+          <BarChart data={byStage} format={(n) => compact(n, "USD")} />
+        </Card>
+        <Card>
+          <div className="text-sm font-bold mb-3" style={{ color: "var(--text)" }}>Pipeline by sector</div>
+          <Donut data={bySector} format={(n) => compact(n, "USD")} />
+        </Card>
       </div>
 
       <SectionTitle hint="open any module">Modules</SectionTitle>
