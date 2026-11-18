@@ -273,6 +273,14 @@ export interface MarketPrice {
   insight?: string;    // one-line AI read on this specific move
 }
 export interface NewsSource { label: string; url: string }
+export interface NewsStory {
+  title: string;
+  category: string;          // Commodities | Macro | Africa & SADC | Equities | Energy | FX
+  summary: string;           // one-line teaser
+  detail: string;            // 2-4 sentences, expanded on click
+  impact?: "up" | "down" | "watch";
+  takeaway?: string;         // Rulethu read-through
+}
 export interface MarketSnapshot {
   date: string;              // yyyy-mm-dd of the digest
   generatedAt: string;       // ISO timestamp
@@ -280,6 +288,7 @@ export interface MarketSnapshot {
   headline: string;          // one-line market headline
   commentary: string;        // AI market take (markdown-ish, Rulethu lens)
   watch: string[];           // 3-5 "what to watch" bullets
+  stories?: NewsStory[];     // expandable news cards (commodities + broader markets)
   sources?: NewsSource[];    // where the prices came from (Kitco etc.)
   demo?: boolean;            // true if produced by the fallback (no live AI)
 }

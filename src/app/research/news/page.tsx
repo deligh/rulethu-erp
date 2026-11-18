@@ -5,7 +5,7 @@ import { useAppData, genId } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { PageHeader, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
-import { fetchMarketDigest, isStale } from "@/lib/news";
+import { fetchMarketDigest, needsRefresh } from "@/lib/news";
 
 function Bold({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -40,23 +40,27 @@ export default function DailyMarketPage() {
     }
   };
 
-  // Auto-refresh on open if the shared feed is stale (once per mount).
+  // On open: show the cached brief immediately. Only fetch if there is NOTHING
+  // cached, or the cached brief is genuinely older than the 3-hour cadence — so
+  // signing in never triggers a reload when a recent brief already exists.
   useEffect(() => {
     if (triggered.current) return;
     triggered.current = true;
-    if (isStale(market)) refresh();
+    if (needsRefresh(market)) refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep it fresh while the page is open: re-check staleness periodically and
-  // when the tab regains focus (approximates a scheduled 2-hourly digest).
+  // While the page stays open, refresh on the cadence (and on focus) only when
+  // the brief has actually aged past REFRESH_HOURS — never just because it's demo.
   useEffect(() => {
-    const tick = () => { if (!busy && isStale(market)) refresh(); };
-    const id = setInterval(tick, 20 * 60 * 1000); // every 20 min
+    const tick = () => { if (!busy && needsRefresh(market)) refresh(); };
+    const id = setInterval(tick, 30 * 60 * 1000); // re-check every 30 min
     window.addEventListener("focus", tick);
     return () => { clearInterval(id); window.removeEventListener("focus", tick); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [market, busy]);
+
+  const [openStory, setOpenStory] = useState<number | null>(null);
 
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
@@ -70,8 +74,9 @@ export default function DailyMarketPage() {
       const brief = market
         ? `TODAY'S MARKET BRIEF:\nHeadline: ${market.headline}\nPrices: ${market.prices.map((p) => `${p.name} ${p.value} ${p.change ?? ""}`).join("; ")}\nCommentary: ${market.commentary}\nWatch: ${market.watch.join("; ")}`
         : "No market brief is loaded.";
+      const nowStr = new Date().toLocaleString("en-GB", { timeZone: "Africa/Harare", weekday: "long", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
       const text = await askClaude({
-        system: "You are Rulethu AI on the market desk at an African investment group in Harare. A colleague tagged you on the daily market brief. Answer their question clearly and expand/explain, always linking the market moves to the Zimbabwe / SADC and Rulethu context (gold & PGM mining, lithium, solar/PPAs, ZSE/VFEX, ZiG/USD). Be concrete and practical, 1-3 short paragraphs. Plain text — no markdown asterisks.",
+        system: `You are Rulethu AI on the market desk at an African investment group in Harare. RIGHT NOW it is ${nowStr} Central Africa Time (UTC+2) — treat this as the current date and time, do not say you cannot tell the time. A colleague tagged you on the daily market brief. Answer their question clearly and expand/explain, always linking the market moves to the Zimbabwe / SADC and Rulethu context (gold & PGM mining, lithium, solar/PPAs, ZSE/VFEX, ZiG/USD). Be concrete and practical, 1-3 short paragraphs. Plain text — no markdown asterisks.`,
         prompt: `${brief}\n\nThread so far: ${threadText}\n\nColleague's question: ${question}\n\nAnswer:`,
         model: "haiku",
         maxTokens: 1000,
@@ -109,9 +114,10 @@ export default function DailyMarketPage() {
     <div className="page-enter">
       <PageHeader
         title="Daily Market"
-        subtitle="Live commodity & market prices with an AI market take through the Rulethu lens — shared across the group and refreshed automatically."
+        subtitle="Live commodity prices and a daily AI briefing — commodities and the wider market — through the Rulethu lens. Cached and shared across the group; it refreshes on a 3-hour cadence, not on every login."
         actions={
           <div className="flex items-center gap-2">
+            {busy && market && <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-faint)" }}><span className="inline-block h-3 w-3 rounded-full border-2 animate-spin" style={{ borderColor: "var(--brand)", borderTopColor: "transparent" }} />updating</span>}
             {market?.demo && <Badge tone="warn">Demo data</Badge>}
             {market && !market.demo && <Badge tone="live">AI · web search</Badge>}
             <button onClick={refresh} disabled={busy} className="rounded-md px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" style={{ background: "var(--brand)" }}>
@@ -155,6 +161,45 @@ export default function DailyMarketPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Today's briefing — expandable story cards (commodities + wider market) */}
+      {market && market.stories && market.stories.length > 0 && (
+        <div className="mb-5">
+          <div className="flex items-baseline justify-between mb-2">
+            <h2 className="text-sm font-bold uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>Today&apos;s briefing</h2>
+            <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>tap a card to read more</span>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {market.stories.map((s, i) => {
+              const open = openStory === i;
+              const impactCol = s.impact === "up" ? "var(--pos)" : s.impact === "down" ? "var(--neg)" : "var(--warn)";
+              const impactLabel = s.impact === "up" ? "▲ Positive" : s.impact === "down" ? "▼ Watch risk" : "● Watch";
+              return (
+                <button
+                  key={i}
+                  onClick={() => setOpenStory(open ? null : i)}
+                  className="rz-card text-left rounded-xl border p-4 flex flex-col"
+                  style={{ background: "var(--surface)", borderColor: open ? "var(--brand)" : "var(--border)", boxShadow: "var(--shadow-card)", animationDelay: `${i * 50}ms` }}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5" style={{ background: "var(--surface-2)", color: "var(--brand)" }}>{s.category}</span>
+                    <span className="text-[10px] font-semibold shrink-0" style={{ color: impactCol }}>{impactLabel}</span>
+                  </div>
+                  <h3 className="text-sm font-bold leading-snug" style={{ color: "var(--text)" }}>{s.title}</h3>
+                  <p className="mt-1 text-xs leading-snug" style={{ color: "var(--text-muted)" }}>{s.summary}</p>
+                  {open && (
+                    <div className="mt-2 pt-2 border-t text-xs leading-relaxed" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+                      <p>{s.detail}</p>
+                      {s.takeaway && <p className="mt-2 flex gap-1.5"><span style={{ color: "var(--accent)" }}>✦</span><span style={{ color: "var(--text)" }}><b>Rulethu read:</b> {s.takeaway}</span></p>}
+                    </div>
+                  )}
+                  <span className="mt-2 text-[11px] font-medium" style={{ color: "var(--brand)" }}>{open ? "Show less ▲" : "Read more ▾"}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 

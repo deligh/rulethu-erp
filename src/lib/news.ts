@@ -5,18 +5,27 @@
 // the secure proxy) to pull real current numbers; if the AI isn't available it
 // returns a clearly-labelled demo snapshot so the page always renders.
 
-import type { MarketSnapshot, MarketPrice, NewsSource } from "./store";
+import type { MarketSnapshot, MarketPrice, NewsSource, NewsStory } from "./store";
 
 // How stale the shared digest may get before we auto-refresh — the whole brief
-// (prices + commentary) regenerates on this cadence, and on any page visit once
-// it's older than this. "Refresh now" always forces a fresh pull.
+// (prices + commentary) regenerates on this cadence. "Refresh now" always forces.
 export const REFRESH_HOURS = 3;
 
+const ageHours = (snap: MarketSnapshot) => (Date.now() - new Date(snap.generatedAt).getTime()) / 3_600_000;
+
+/** Display helper — is this brief old / demo (for the badge). */
 export function isStale(snap: MarketSnapshot | null): boolean {
   if (!snap) return true;
-  if (snap.demo) return true; // never let a demo snapshot stick — fetch real
-  const age = Date.now() - new Date(snap.generatedAt).getTime();
-  return age > REFRESH_HOURS * 3_600_000;
+  if (snap.demo) return true;
+  return ageHours(snap) > REFRESH_HOURS;
+}
+
+/** Auto-refresh trigger — fires ONLY when there is nothing cached or the cached
+ *  brief is genuinely older than the cadence. A cached brief (even a demo) is
+ *  shown as-is on login instead of re-fetching every time. */
+export function needsRefresh(snap: MarketSnapshot | null): boolean {
+  if (!snap) return true;
+  return ageHours(snap) > REFRESH_HOURS;
 }
 
 const MARKET_SYSTEM =
@@ -37,14 +46,21 @@ const MARKET_SYSTEM =
   "Return ONLY a single JSON object — no prose, no code fences — EXACTLY:\n" +
   '{"headline": string, "prices": [{"name": string, "value": string, "change": string, ' +
   '"dir": "up"|"down"|"flat", "source": string, "insight": string}], ' +
-  '"commentary": string, "watch": [string, ...], "sources": [{"label": string, "url": string}]}\n' +
+  '"commentary": string, "watch": [string, ...], ' +
+  '"stories": [{"title": string, "category": "Commodities"|"Macro"|"Africa & SADC"|"Equities"|"Energy"|"FX", ' +
+  '"summary": string, "detail": string, "impact": "up"|"down"|"watch", "takeaway": string}], ' +
+  '"sources": [{"label": string, "url": string}]}\n' +
   "Include these prices in order: Gold (spot, $/oz), Platinum ($/oz), Brent Crude " +
   "($/bbl), Lithium carbonate (per tonne), ZSE All Share Index. " +
   "`value` is short (e.g. \"$2,655/oz\"). `change` is the day move (e.g. \"+1.2%\"). " +
   "`source` is a short label (e.g. \"Kitco\"). `insight` is ONE short clause on what " +
-  "the move means for Rulethu (e.g. \"supports gold miner USD margins\"). " +
-  "`sources` lists the pages you used with real URLs. Keep `commentary` UNDER 110 " +
-  "words (2 short paragraphs) and `watch` to 4 short bullets. Output ONLY the JSON.";
+  "the move means for Rulethu. " +
+  "`stories` is the heart of the brief — write 6 to 7 punchy, current news items for today: " +
+  "at least 3 on COMMODITIES/metals/energy that matter to Rulethu, and the rest on the OTHER side — " +
+  "macro (US rates, dollar, inflation), Africa & SADC markets, Zimbabwe (ZiG/USD, ZSE/VFEX), and global equities. " +
+  "Each story: `title` is a sharp headline (<9 words); `summary` is one vivid teaser line; `detail` is 2-4 sentences " +
+  "with the actual facts/numbers; `takeaway` is one line on what it means for Rulethu. Make them genuinely interesting and the LATEST you can find. " +
+  "`sources` lists the pages you used with real URLs. Keep `commentary` UNDER 90 words (2 short paragraphs) and `watch` to 4 short bullets. Output ONLY the JSON.";
 
 /** Parse the model's JSON, tolerating stray fences/text around it. */
 function parseDigest(text: string): Partial<MarketSnapshot> | null {
@@ -72,11 +88,22 @@ function parseDigest(text: string): Partial<MarketSnapshot> | null {
           .filter((s: NewsSource) => s.label && s.url)
           .slice(0, 8)
       : [];
+    const stories: NewsStory[] = Array.isArray(obj.stories)
+      ? obj.stories.map((s: Record<string, unknown>) => ({
+          title: String(s.title ?? ""),
+          category: String(s.category ?? "Markets"),
+          summary: String(s.summary ?? ""),
+          detail: String(s.detail ?? ""),
+          impact: s.impact === "up" || s.impact === "down" ? s.impact : "watch",
+          takeaway: s.takeaway != null ? String(s.takeaway) : undefined,
+        })).filter((s: NewsStory) => s.title && s.detail).slice(0, 8)
+      : [];
     return {
       headline: String(obj.headline ?? "Market update"),
       prices,
       commentary: String(obj.commentary ?? ""),
       watch: Array.isArray(obj.watch) ? obj.watch.map((w: unknown) => String(w)).slice(0, 6) : [],
+      stories,
       sources,
     };
   } catch {
@@ -96,20 +123,24 @@ export async function fetchMarketDigest(): Promise<MarketSnapshot> {
     watch: [],
   };
 
+  const nowStr = now.toLocaleString("en-GB", { timeZone: "Africa/Harare", weekday: "long", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const todayStr = now.toLocaleDateString("en-GB", { timeZone: "Africa/Harare", day: "2-digit", month: "long", year: "numeric" });
+
   try {
     const { askClaude } = await import("./aiClient");
     const text = await askClaude({
       system: MARKET_SYSTEM,
       prompt:
-        "Produce today's Rulethu market brief now. Be efficient: do AT MOST 3 web " +
-        "searches total — e.g. one for 'kitco gold platinum price', one for 'brent " +
-        "crude price today', one for 'lithium carbonate price ZSE all share today'. " +
-        "Capture all five prices (estimate with change 'n/a' only if truly " +
-        "unavailable), then return ONLY the JSON object. Do not keep searching.",
+        `RIGHT NOW it is ${nowStr} Central Africa Time (UTC+2). TODAY is ${todayStr}. ` +
+        "Produce TODAY's Rulethu market brief with the LATEST available prices — search for today's numbers " +
+        `(e.g. 'gold price today ${todayStr}', 'brent crude price today', 'lithium carbonate price today', 'ZSE all share index today'). ` +
+        "Use the most recent figure you can find; if a market is closed or only a prior session's close is available, say so in `change` " +
+        "(e.g. 'prev close') rather than presenting an old number as live. In each story and the commentary, make it clearly about TODAY " +
+        "and reference how recent each figure is. Do AT MOST 4 web searches total, then return ONLY the JSON object. Do not keep searching.",
       webSearch: true,
       searchMaxUses: 4,
-      maxTokens: 3500,
-      timeoutMs: 115_000,
+      maxTokens: 4500,
+      timeoutMs: 120_000,
     });
     const parsed = text ? parseDigest(text) : null;
     if (parsed && parsed.prices && parsed.prices.length) {
@@ -144,6 +175,14 @@ function demoDigest(base: MarketSnapshot): MarketSnapshot {
       "PGM demand and platinum basket pricing",
       "Lithium carbonate spot for off-take economics",
       "ZiG/USD and ZSE liquidity",
+    ],
+    stories: [
+      { title: "Gold holds near record as rate-cut bets firm", category: "Commodities", summary: "Bullion stays bid as markets price further easing.", detail: "Spot gold is trading close to its recent highs as softer US data lifts expectations of rate cuts, keeping real yields contained. A strong bullion price is the single biggest tailwind for Zimbabwe's gold producers.", impact: "up", takeaway: "Supports USD margins across Rulethu's gold exposure." },
+      { title: "Platinum basket firms on supply discipline", category: "Commodities", summary: "PGM prices steady as South African supply stays tight.", detail: "Platinum and palladium are holding up as constrained South African output and resilient autocatalyst demand offset a softer industrial backdrop. The basket price drives PGM project economics across the region.", impact: "up", takeaway: "Improves the case for PGM-linked opportunities." },
+      { title: "Lithium stays soft, pressuring battery metals", category: "Energy", summary: "Carbonate spot remains weak on oversupply.", detail: "Lithium carbonate prices remain depressed amid ample supply and slower-than-hoped EV demand growth, keeping new battery-metal projects on the back foot. Off-take economics need conservative price decks.", impact: "down", takeaway: "Stress-test lithium off-take assumptions before committing." },
+      { title: "Dollar steadies as Fed path comes into focus", category: "Macro", summary: "Greenback consolidates ahead of key data.", detail: "The US dollar is range-bound as investors weigh the pace of future rate cuts against sticky services inflation. Dollar direction sets the tone for commodity prices and frontier-market flows.", impact: "watch", takeaway: "A softer dollar would help both metals and EM capital flows." },
+      { title: "ZSE firmer on heavyweight counters", category: "Africa & SADC", summary: "Local equities edge up; USD pricing in focus.", detail: "The ZSE All Share has been supported by gains in mining and consumer heavyweights, though liquidity remains thin and ZiG/USD dynamics continue to shape real returns. VFEX USD listings remain the cleaner read on value.", impact: "up", takeaway: "Watch ZiG/USD for the real-return read on local holdings." },
+      { title: "Brent steadies in the mid-$70s", category: "Energy", summary: "Crude balances supply risk against demand worries.", detail: "Brent is holding in the mid-$70s as OPEC+ supply management offsets concerns about global demand. Energy prices feed directly into input costs and the economics of power and logistics assets.", impact: "watch", takeaway: "Moderate oil keeps input costs manageable for portfolio opcos." },
     ],
   };
 }
