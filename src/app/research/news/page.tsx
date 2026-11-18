@@ -72,7 +72,7 @@ export default function DailyMarketPage() {
   const aiAnswer = async (question: string, parentId: string, threadText: string) => {
     setAiBusy(parentId);
     try {
-      const { askClaude } = await import("@/lib/aiClient");
+      const { askClaude, aiLastError } = await import("@/lib/aiClient");
       const brief = market
         ? `TODAY'S MARKET BRIEF:\nHeadline: ${market.headline}\nPrices: ${market.prices.map((p) => `${p.name} ${p.value} ${p.change ?? ""}`).join("; ")}\nCommentary: ${market.commentary}\nWatch: ${market.watch.join("; ")}`
         : "No market brief is loaded.";
@@ -83,7 +83,8 @@ export default function DailyMarketPage() {
         model: "haiku",
         maxTokens: 1000,
       });
-      add("newsComments", { id: genId("NC"), author: "Rulethu AI", text: text || "I couldn't answer just now — try again in a moment.", createdAt: new Date().toISOString(), parentId, isAI: true });
+      const reply = text || `I couldn't answer just now (${aiLastError() ?? "no response"}). Try again in a moment.`;
+      add("newsComments", { id: genId("NC"), author: "Rulethu AI", text: reply, createdAt: new Date().toISOString(), parentId, isAI: true });
     } finally {
       setAiBusy(null);
     }
