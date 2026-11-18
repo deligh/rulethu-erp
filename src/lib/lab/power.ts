@@ -48,7 +48,7 @@ export const POWER_INPUTS: InputSpec[] = [
   { key: "newConnections", label: "New homes connected", unit: "thousand", min: 0, max: 1500, step: 25, default: 0, group: G.demand, aliases: ["homes", "households", "connections"] },
   { key: "kwPerHome", label: "Peak load per new home", unit: "kW", min: 0.3, max: 2, step: 0.1, default: 0.8, group: G.demand },
 
-  { key: "karibaWater", label: "Kariba water available", unit: "% of 1,050 MW", min: 10, max: 100, step: 5, default: 40, group: G.supply, source: "ZPC 2025: Kariba ran 250–400 MW on low water", aliases: ["kariba", "water"] },
+  { key: "karibaWater", label: "Kariba water available", unit: "% of 1,050 MW", min: 10, max: 100, step: 5, default: 40, group: G.supply, source: "ZPC 2025: Kariba ran 250–400 MW on low water", aliases: ["kariba water", "kariba", "water"] },
   { key: "hwangeAvail", label: "Hwange availability", unit: "% of 1,520 MW", min: 30, max: 95, step: 1, default: 62, group: G.supply, source: "ZPC 2025: Hwange about 800–1,000 MW", help: "Raising this = refurbishing old units 1–6", aliases: ["hwange"] },
   { key: "thermalsAvail", label: "Small thermals (Harare, Bulawayo, Munyati)", unit: "% of 270 MW", min: 0, max: 80, step: 5, default: 10, group: G.supply, aliases: ["thermal", "munyati", "harare station", "bulawayo station"] },
   { key: "imports", label: "Imports (HCB, Eskom, ZESCO)", unit: "MW", min: 0, max: 800, step: 25, default: 150, group: G.supply, aliases: ["import", "imports", "eskom", "hcb"] },
@@ -250,6 +250,9 @@ export function powerInsights(i: Inputs, o: PowerOut): string[] {
   } else {
     out.push(`Supply covers demand in every hour of a typical day in ${i.year}. No load-shedding in this scenario.`);
   }
+  if (i.battery > 0 && o.bySource.battery < i.battery * BATTERY_HOURS * 0.5) {
+    out.push(`The ${mw(i.battery)} of batteries deliver only ${num(o.bySource.battery)} MWh a day (of ${num(i.battery * BATTERY_HOURS)} possible): there is almost no spare power during the day to charge them. Batteries only help once solar or other supply exceeds daytime demand — pair them with more solar.`);
+  }
   if (o.wastedSolarMWh > 200) {
     out.push(`About ${num(o.wastedSolarMWh)} MWh of midday solar is wasted each day. Adding ${mw(Math.min(o.wastedSolarMWh / 4, 3000))} of 4-hour batteries would move it into the evening peak.`);
   }
@@ -298,18 +301,19 @@ export function computePower(i: Inputs): LabResult {
 }
 
 // ---------- Auto-solve: close the gap at least cost ----------
-interface Lever { key: string; label: string; step: number; max: (i: Inputs) => number; dir: 1 | -1 }
+interface Lever { key: string; label: string; step: number; max: (i: Inputs) => number; dir: 1 | -1; pair?: { key: string; step: number; max: number } }
 const LEVERS: Lever[] = [
-  { key: "losses", label: "Cut grid losses (smart meters)", step: 1, max: () => 10, dir: -1 },
+  { key: "losses", label: "Cut grid losses (smart meters)", step: 1, max: () => 12, dir: -1 },
   { key: "hwangeAvail", label: "Refurbish Hwange units", step: 2, max: () => 88, dir: 1 },
-  { key: "geysers", label: "Solar geysers", step: 25, max: () => 600, dir: 1 },
-  { key: "efficiency", label: "Efficiency programme", step: 1, max: () => 12, dir: 1 },
+  { key: "geysers", label: "Solar geysers", step: 25, max: () => 400, dir: 1 },
+  { key: "efficiency", label: "Efficiency programme", step: 1, max: () => 8, dir: 1 },
   { key: "shift", label: "Time-of-use load shifting", step: 25, max: () => 350, dir: 1 },
   { key: "battery", label: "Battery storage", step: 50, max: () => 3000, dir: 1 },
+  { key: "solar", label: "Solar farms paired with batteries", step: 200, max: () => 5000, dir: 1, pair: { key: "battery", step: 100, max: 3000 } },
   { key: "solar", label: "Utility solar", step: 100, max: () => 5000, dir: 1 },
   { key: "rooftop", label: "Rooftop solar", step: 50, max: () => 1500, dir: 1 },
-  { key: "mineSelfGen", label: "Mines' own solar + battery", step: 25, max: () => 600, dir: 1 },
-  { key: "imports", label: "More imports", step: 25, max: () => 600, dir: 1 },
+  { key: "mineSelfGen", label: "Mines' own solar + battery", step: 25, max: () => 300, dir: 1 },
+  { key: "imports", label: "More imports", step: 25, max: () => 400, dir: 1 },
   { key: "newCoal", label: "New coal plant", step: 100, max: (i) => (i.year >= 2029 ? 2000 : 0), dir: 1 },
   { key: "newHydro", label: "New hydro (Batoka)", step: 100, max: (i) => (i.year >= 2032 ? 1200 : 0), dir: 1 },
 ];
@@ -318,32 +322,43 @@ export function solvePower(start: Inputs): SolveResult {
   let cur = { ...start };
   let o = runPower(cur);
   const added: Record<string, number> = {};
-  const totalCost = (x: PowerOut) => x.capex + 5 * x.annualCost; // capex + 5 yrs running
+  // Cost of a step = extra capex + 5 years of any EXTRA running cost. Savings in
+  // running cost are not counted as a bonus, so cheap-looking demand cuts can't
+  // score as "free" — every lever has to pay its way in capex.
   for (let iter = 0; iter < 400 && o.unservedMWh > 1; iter++) {
-    let best: { key: string; next: Inputs; out: PowerOut; score: number } | null = null;
+    let best: { keys: string[]; next: Inputs; out: PowerOut; score: number } | null = null;
     for (const L of LEVERS) {
       const v = cur[L.key];
       const lim = L.max(cur);
       const nv = v + L.dir * L.step;
       if ((L.dir === 1 && nv > lim) || (L.dir === -1 && nv < lim)) continue;
       const next = { ...cur, [L.key]: nv };
+      if (L.pair) {
+        const pv = cur[L.pair.key] + L.pair.step;
+        if (pv > L.pair.max) continue;
+        next[L.pair.key] = pv;
+      }
       const out = runPower(next);
       const gain = o.unservedMWh - out.unservedMWh;
       if (gain <= 0.5) continue;
-      const cost = Math.max(1, totalCost(out) - totalCost(o));
+      const cost = Math.max(1e5, out.capex - o.capex + 5 * Math.max(0, out.annualCost - o.annualCost));
       const score = gain / cost;
-      if (!best || score > best.score) best = { key: L.key, next, out, score };
+      if (!best || score > best.score) best = { keys: L.pair ? [L.key, L.pair.key] : [L.key], next, out, score };
     }
     if (!best) break;
-    added[best.key] = (added[best.key] ?? 0) + (best.next[best.key] - cur[best.key]);
+    for (const k of best.keys) added[k] = 1;
     cur = best.next;
     o = best.out;
   }
   const base = runPower(start);
-  const steps = LEVERS.filter((L) => added[L.key]).map((L) => {
-    const spec = POWER_INPUTS.find((s) => s.key === L.key)!;
-    return { label: L.label, detail: `${spec.label}: ${num(start[L.key])} → ${num(cur[L.key])} ${spec.unit}` };
-  });
+  const seen = new Set<string>();
+  const steps = LEVERS.flatMap((L) => (L.pair ? [L.key, L.pair.key] : [L.key]))
+    .filter((k) => added[k] && cur[k] !== start[k] && !seen.has(k) && seen.add(k))
+    .map((k) => {
+      const spec = POWER_INPUTS.find((s) => s.key === k)!;
+      const L = LEVERS.find((x) => x.key === k);
+      return { label: L?.label ?? spec.label, detail: `${spec.label}: ${num(start[k])} → ${num(cur[k])} ${spec.unit}` };
+    });
   const closed = o.unservedMWh <= 1;
   return {
     title: closed ? `Cheapest plan to end load-shedding by ${cur.year}` : `Best plan found — gap not fully closed by ${cur.year}`,

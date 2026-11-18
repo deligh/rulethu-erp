@@ -45,6 +45,8 @@ export interface LabResult {
   bars?: { title: string; unit: string; items: BarItem[]; format: "usd" | "num" | "pct" | "mw" | "t" };
   working: string[];
   insights: string[];
+  /** Push a knock-on effect into another lab (e.g. extra MW into the Power Lab). */
+  link?: { label: string; lab: string; key: string; add: number };
 }
 
 export interface Preset {
@@ -96,7 +98,7 @@ export function usd(n: number, digits = 1): string {
   if (a >= 1e9) return `${s}USD ${(a / 1e9).toFixed(digits)}bn`;
   if (a >= 1e6) return `${s}USD ${(a / 1e6).toFixed(a >= 1e8 ? 0 : digits)}m`;
   if (a >= 1e3) return `${s}USD ${(a / 1e3).toFixed(0)}k`;
-  return `${s}USD ${a.toFixed(2)}`;
+  return `${s}USD ${a.toFixed(a > 0 && a < 10 ? 2 : 0)}`;
 }
 export function num(n: number, digits = 0): string {
   return n.toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits });

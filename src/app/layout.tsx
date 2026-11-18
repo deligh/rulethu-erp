@@ -12,6 +12,7 @@ import AccessGuard from "@/components/AccessGuard";
 import PageTransition from "@/components/PageTransition";
 import { DefaultPasswordBanner } from "@/components/AccountSecurity";
 import DigestRunner from "@/components/DigestRunner";
+import ShellSwitch from "@/components/ShellSwitch";
 import { AppDataProvider } from "@/lib/store";
 import { AuthProvider } from "@/lib/auth";
 
@@ -49,6 +50,7 @@ export default function RootLayout({
           }}
         />
         <PWARegister />
+        <ShellSwitch standalone={children}>
         <AppDataProvider>
           <AuthProvider>
             <LoginGate>
@@ -71,6 +73,7 @@ export default function RootLayout({
             </LoginGate>
           </AuthProvider>
         </AppDataProvider>
+        </ShellSwitch>
       </body>
     </html>
   );
