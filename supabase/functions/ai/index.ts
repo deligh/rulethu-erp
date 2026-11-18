@@ -123,11 +123,12 @@ Deno.serve(async (req: Request) => {
   }
   if (payload.web_search) {
     const maxUses = Math.min(Math.max(1, payload.search_max_uses ?? 4), 6);
+    // NOTE: web_search_20260209 does NOT accept max_content_tokens (it 400s). Only
+    // max_uses / allowed_domains / user_location are valid here.
     tools.push({
       type: "web_search_20260209",
       name: "web_search",
       max_uses: maxUses,
-      max_content_tokens: 5000,
     });
   }
   if (tools.length) base.tools = tools;
