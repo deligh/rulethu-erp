@@ -35,6 +35,11 @@ function client(): SupabaseClient | null {
   return sb;
 }
 
+// Shared Supabase client for other features (e.g. Storage / file library).
+export function supabaseClient(): SupabaseClient | null {
+  return client();
+}
+
 export interface CloudRow {
   id: string;
   data?: unknown;   // the app data blob (store)

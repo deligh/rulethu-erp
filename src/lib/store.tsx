@@ -402,6 +402,7 @@ interface AppData extends Collections {
   messages: ChatMessage[];
   notifications: AppNotification[];
   market: MarketSnapshot | null;   // latest shared market digest
+  digestDate: string | null;       // yyyy-mm-dd of the last auto-posted daily digest
 }
 
 // Deterministic seed (same on server + first client render → no hydration mismatch).
@@ -504,6 +505,7 @@ const SEED: AppData = {
     { id: "LP-6", name: "East Africa Insurance Co.", type: "Institutional", contact: "P. Otieno", email: "", committed: 20_000_000, called: 0, distributed: 0, relationship: "Prospect", owner: "Delight", lastContact: "2026-10-20", note: "Reviewing PPM; IC meets their board Jan.", createdAt: "2026-08-12T00:00:00Z" },
   ],
   market: null,
+  digestDate: null,
 };
 
 interface Ctx extends AppData {
@@ -529,6 +531,7 @@ interface Ctx extends AppData {
   publishReport: (report: ResearchReport, opts?: { summary?: string; attachment?: Attachment }) => void;
   // market news feed
   setMarket: (snap: MarketSnapshot) => void;
+  setDigestDate: (date: string) => void;
   // generic collection ops
   add: <K extends CKey>(key: K, item: Item<K>, note?: { title: string; body?: string; module?: string }) => void;
   patch: <K extends CKey>(key: K, id: string, p: Partial<Item<K>>, note?: { title: string; body?: string; module?: string }) => void;
@@ -591,6 +594,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   const setMarket: Ctx["setMarket"] = useCallback((snap) => {
     setData((d) => ({ ...d, market: snap }));
+  }, []);
+
+  const setDigestDate: Ctx["setDigestDate"] = useCallback((date) => {
+    setData((d) => ({ ...d, digestDate: date }));
   }, []);
 
   const add: Ctx["add"] = useCallback((key, item, note) => {
@@ -831,7 +838,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     ...data,
     hydrated,
     addEntry, addLeave, setLeaveStatus, addClaim, setClaimStatus, addMessage, addChannel, addChannelMember, markAllRead, markNoteRead, notify, add, patch, remove, resetAll,
-    raiseRequest, fulfilRequest, setRequestStatus, setMarket, setChannelContext, addChannelInsight, publishReport,
+    raiseRequest, fulfilRequest, setRequestStatus, setMarket, setDigestDate, setChannelContext, addChannelInsight, publishReport,
   };
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

@@ -11,6 +11,7 @@ import LoginGate from "@/components/LoginGate";
 import AccessGuard from "@/components/AccessGuard";
 import PageTransition from "@/components/PageTransition";
 import { DefaultPasswordBanner } from "@/components/AccountSecurity";
+import DigestRunner from "@/components/DigestRunner";
 import { AppDataProvider } from "@/lib/store";
 import { AuthProvider } from "@/lib/auth";
 
@@ -46,6 +47,7 @@ export default function RootLayout({
         <AppDataProvider>
           <AuthProvider>
             <LoginGate>
+              <DigestRunner />
               <AskAI />
               <ChatBot />
               <div className="flex min-h-screen">

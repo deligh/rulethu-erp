@@ -21,7 +21,7 @@ export interface SessionUser {
 
 // Modules every employee can reach, whatever their department.
 export const SHARED_MODULES: ModuleKey[] = [
-  "dashboard", "workspace", "board", "calendar", "comms", "quiz", "ai", "research", "programme", "hr", "requests",
+  "dashboard", "workspace", "board", "files", "calendar", "comms", "quiz", "ai", "research", "programme", "hr", "requests",
 ];
 
 // Department-restricted modules → which departments may open them.

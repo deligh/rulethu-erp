@@ -45,6 +45,7 @@ export const SUBMODULES: Record<ModuleKey, SubModuleDef[]> = {
   ],
   workspace: [],
   board: [],
+  files: [],
   portfolio: [
     { slug: "", name: "Holdings", status: "live" },
     { slug: "investors", name: "Investors (LP) CRM", status: "live", custom: true },

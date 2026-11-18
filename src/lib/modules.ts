@@ -5,6 +5,7 @@ export type ModuleKey =
   | "ai"
   | "workspace"
   | "board"
+  | "files"
   | "calendar"
   | "programme"
   | "comms"
@@ -52,6 +53,7 @@ const ICONS = {
   briefcase: "M3 7h18v13H3zM8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M3 12h18",
   board: "M4 4h16v12H4zM8 20h8M12 16v4M8 8h3M8 11h6",
   portfolio: "M3 3v18h18M7 15l3-4 3 3 5-7M18 10h2M18 10v2",
+  files: "M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9zM13 2v7h7",
 };
 
 export const MODULES: AppModule[] = [
@@ -95,6 +97,17 @@ export const MODULES: AppModule[] = [
     description:
       "A live collaborative whiteboard — drop sticky notes, brainstorm and map ideas together, shared across the group in real time.",
     icon: ICONS.board,
+    status: "live",
+    group: "core",
+  },
+  {
+    key: "files",
+    name: "File Library",
+    href: "/files",
+    tagline: "Shared documents",
+    description:
+      "Real shared cloud storage — upload documents, models and decks once and everyone sees them on any device. Backed by Supabase Storage.",
+    icon: ICONS.files,
     status: "live",
     group: "core",
   },
