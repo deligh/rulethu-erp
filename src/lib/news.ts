@@ -164,32 +164,26 @@ function demoDigest(base: MarketSnapshot): MarketSnapshot {
   return {
     ...base,
     demo: true,
-    headline: "Market brief (demo) — connect live search for real-time prices",
+    headline: "Live prices unavailable right now — these are NOT real figures",
     prices: [
-      { name: "Gold (spot)", value: "$2,650/oz", change: "+0.6%", dir: "up" },
-      { name: "Platinum", value: "$980/oz", change: "-0.3%", dir: "down" },
-      { name: "Brent Crude", value: "$74/bbl", change: "+0.4%", dir: "up" },
-      { name: "Lithium carbonate", value: "$10,800/t", change: "-1.1%", dir: "down" },
-      { name: "ZSE All Share", value: "285.4", change: "+0.9%", dir: "up" },
+      { name: "Gold (spot)", value: "—", dir: "flat", insight: "live fetch unavailable — press Refresh" },
+      { name: "Platinum", value: "—", dir: "flat", insight: "live fetch unavailable" },
+      { name: "Brent Crude", value: "—", dir: "flat", insight: "live fetch unavailable" },
+      { name: "Lithium carbonate", value: "—", dir: "flat", insight: "live fetch unavailable" },
+      { name: "ZSE All Share", value: "—", dir: "flat", insight: "live fetch unavailable" },
     ],
     commentary:
-      "This is an on-device demo of the market desk. Precious metals remain the " +
-      "key read-through for Rulethu's gold and PGM exposure, while lithium softness " +
-      "continues to pressure battery-metal economics. Once the live AI market desk " +
-      "is running, this brief refreshes with real current prices and a fresh take.",
+      "The live market desk could not retrieve prices just now, so no figures are shown — " +
+      "nothing here is a real quote. This usually means the AI function needs redeploying " +
+      "(to enable direct price fetching) or the web tools hit a limit. Press \"Refresh now\" to try again. " +
+      "The themes below are standing watch-items, not today's confirmed data.",
     watch: [
       "US rate path and the gold bid",
       "PGM demand and platinum basket pricing",
       "Lithium carbonate spot for off-take economics",
       "ZiG/USD and ZSE liquidity",
     ],
-    stories: [
-      { title: "Gold holds near record as rate-cut bets firm", category: "Commodities", summary: "Bullion stays bid as markets price further easing.", detail: "Spot gold is trading close to its recent highs as softer US data lifts expectations of rate cuts, keeping real yields contained. A strong bullion price is the single biggest tailwind for Zimbabwe's gold producers.", impact: "up", takeaway: "Supports USD margins across Rulethu's gold exposure." },
-      { title: "Platinum basket firms on supply discipline", category: "Commodities", summary: "PGM prices steady as South African supply stays tight.", detail: "Platinum and palladium are holding up as constrained South African output and resilient autocatalyst demand offset a softer industrial backdrop. The basket price drives PGM project economics across the region.", impact: "up", takeaway: "Improves the case for PGM-linked opportunities." },
-      { title: "Lithium stays soft, pressuring battery metals", category: "Energy", summary: "Carbonate spot remains weak on oversupply.", detail: "Lithium carbonate prices remain depressed amid ample supply and slower-than-hoped EV demand growth, keeping new battery-metal projects on the back foot. Off-take economics need conservative price decks.", impact: "down", takeaway: "Stress-test lithium off-take assumptions before committing." },
-      { title: "Dollar steadies as Fed path comes into focus", category: "Macro", summary: "Greenback consolidates ahead of key data.", detail: "The US dollar is range-bound as investors weigh the pace of future rate cuts against sticky services inflation. Dollar direction sets the tone for commodity prices and frontier-market flows.", impact: "watch", takeaway: "A softer dollar would help both metals and EM capital flows." },
-      { title: "ZSE firmer on heavyweight counters", category: "Africa & SADC", summary: "Local equities edge up; USD pricing in focus.", detail: "The ZSE All Share has been supported by gains in mining and consumer heavyweights, though liquidity remains thin and ZiG/USD dynamics continue to shape real returns. VFEX USD listings remain the cleaner read on value.", impact: "up", takeaway: "Watch ZiG/USD for the real-return read on local holdings." },
-      { title: "Brent steadies in the mid-$70s", category: "Energy", summary: "Crude balances supply risk against demand worries.", detail: "Brent is holding in the mid-$70s as OPEC+ supply management offsets concerns about global demand. Energy prices feed directly into input costs and the economics of power and logistics assets.", impact: "watch", takeaway: "Moderate oil keeps input costs manageable for portfolio opcos." },
-    ],
+    // No stories in offline mode — we don't present undated items as today's news.
+    stories: [],
   };
 }

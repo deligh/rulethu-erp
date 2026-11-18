@@ -137,6 +137,8 @@ Deno.serve(async (req: Request) => {
     // Server-tool loop: resend while Claude pauses to run web fetch / search.
     // Capped — each extra round is another full upstream call (watch the 150s limit).
     const rounds = usesServerTool ? 6 : 2;
+    const origMessages = JSON.parse(JSON.stringify(messages));
+    let droppedFetch = false;
     for (let i = 0; i < rounds; i++) {
       const r = await fetch(ANTHROPIC_URL, {
         method: "POST",
@@ -151,6 +153,16 @@ Deno.serve(async (req: Request) => {
       const data = await r.json();
       if (!r.ok) {
         const msg = (data?.error?.message as string) ?? `Anthropic error ${r.status}`;
+        // Graceful degrade: if web_fetch isn't available on this account, drop it
+        // and retry once with web_search only (so we still get real data).
+        const toolsArr = base.tools as { type?: string }[] | undefined;
+        if (!droppedFetch && Array.isArray(toolsArr) && toolsArr.some((t) => t.type?.startsWith("web_fetch"))) {
+          droppedFetch = true;
+          base.tools = toolsArr.filter((t) => !t.type?.startsWith("web_fetch"));
+          messages.length = 0;
+          messages.push(...origMessages);
+          continue;
+        }
         return json({ error: msg }, r.status);
       }
       usage = data?.usage ?? usage;
