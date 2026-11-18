@@ -28,6 +28,12 @@ export function needsRefresh(snap: MarketSnapshot | null): boolean {
   return ageHours(snap) > REFRESH_HOURS;
 }
 
+// Why the last fetch fell back to demo (precise diagnostic for the page).
+let lastDigestReason: string | null = null;
+export function lastMarketReason(): string | null {
+  return lastDigestReason;
+}
+
 const MARKET_SYSTEM =
   "You are Rulethu AI's market desk for Rulethu Holdings, an African investment " +
   "group in Harare, Zimbabwe (interests in mining — gold, platinum/PGMs, lithium " +
@@ -55,10 +61,10 @@ const MARKET_SYSTEM =
   "`value` is short (e.g. \"$2,655/oz\"). `change` is the day move (e.g. \"+1.2%\"). " +
   "`source` is a short label (e.g. \"Kitco\"). `insight` is ONE short clause on what " +
   "the move means for Rulethu. " +
-  "`stories` is the heart of the brief — write 6 to 7 punchy, current news items for today: " +
+  "`stories` is the heart of the brief — write 5 to 6 punchy, current news items for today: " +
   "at least 3 on COMMODITIES/metals/energy that matter to Rulethu, and the rest on the OTHER side — " +
   "macro (US rates, dollar, inflation), Africa & SADC markets, Zimbabwe (ZiG/USD, ZSE/VFEX), and global equities. " +
-  "Each story: `title` is a sharp headline (<9 words); `summary` is one vivid teaser line; `detail` is 2-4 sentences " +
+  "Each story: `title` is a sharp headline (<9 words); `summary` is one vivid teaser line; `detail` is 2-3 sentences " +
   "with the actual facts/numbers; `takeaway` is one line on what it means for Rulethu. Make them genuinely interesting and the LATEST you can find. " +
   "`sources` lists the pages you used with real URLs. Keep `commentary` UNDER 90 words (2 short paragraphs) and `watch` to 4 short bullets. Output ONLY the JSON.";
 
@@ -146,15 +152,24 @@ export async function fetchMarketDigest(): Promise<MarketSnapshot> {
       fetchMaxUses: 6,
       webSearch: true,
       searchMaxUses: 3,
-      maxTokens: 4500,
+      maxTokens: 7000,
       timeoutMs: 125_000,
     });
-    const parsed = text ? parseDigest(text) : null;
-    if (parsed && parsed.prices && parsed.prices.length) {
-      return { ...base, ...parsed } as MarketSnapshot;
+    if (!text) {
+      const { aiLastError } = await import("./aiClient");
+      lastDigestReason = aiLastError() ?? "No response from the market desk.";
+    } else {
+      const parsed = parseDigest(text);
+      if (parsed && parsed.prices && parsed.prices.length) {
+        lastDigestReason = null;
+        return { ...base, ...parsed } as MarketSnapshot;
+      }
+      lastDigestReason = parsed
+        ? `The AI replied but found no prices (reply ${text.length} chars). The web tools may have returned nothing today.`
+        : `The AI reply could not be read as a brief (likely truncated; ${text.length} chars). Try Refresh again.`;
     }
-  } catch {
-    /* fall through to demo */
+  } catch (e) {
+    lastDigestReason = `Market desk error: ${String((e as Error)?.message ?? e)}`;
   }
   return demoDigest(base);
 }

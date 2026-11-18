@@ -5,8 +5,7 @@ import { useAppData, genId } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { PageHeader, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
-import { fetchMarketDigest, needsRefresh } from "@/lib/news";
-import { aiLastError } from "@/lib/aiClient";
+import { fetchMarketDigest, needsRefresh, lastMarketReason } from "@/lib/news";
 
 function Bold({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -37,7 +36,7 @@ export default function DailyMarketPage() {
       const snap = await fetchMarketDigest();
       // A real brief always wins. A demo brief only applies if we have nothing real.
       if (!snap.demo || !market || market.demo) setMarket(snap);
-      setDiag(snap.demo ? (aiLastError() ?? "The live market desk returned no data.") : null);
+      setDiag(snap.demo ? (lastMarketReason() ?? "The live market desk returned no data.") : null);
     } finally {
       setBusy(false);
     }

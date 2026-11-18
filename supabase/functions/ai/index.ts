@@ -28,7 +28,10 @@ const ANTHROPIC_VERSION = "2023-06-01";
 // Allow-list of models (keeps cost predictable). Anything else → haiku.
 const ALLOWED = new Set(["claude-haiku-5-5", "claude-sonnet-5-5"]);
 const DEFAULT_MODEL = "claude-haiku-5-5";
-const MAX_TOKENS_CAP = 4096;
+// Output cap. Raised so large structured replies (e.g. the market brief: prices +
+// several news cards as one JSON object) are not truncated mid-JSON. Cost is still
+// bounded by the model allow-list and your Anthropic spend cap.
+const MAX_TOKENS_CAP = 8192;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
