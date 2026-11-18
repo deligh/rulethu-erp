@@ -54,7 +54,8 @@ export default function AskAI() {
       tbills: data.tbills, loans: data.loans, leave: data.leave, employees: data.employees,
       deals: data.deals, goals: data.goals,
     }),
-  }), [data.deals, data.loans, data.tbills, data.employees, data.tasks, data.leave, data.reports, data.entries, data.pos, data.requisitions, data.requests, data.goals]);
+    knowledge: data.knowledge.map((k) => ({ name: k.name, folder: k.folder, description: k.description, excerpt: k.excerpt, readable: k.readable })),
+  }), [data.deals, data.loans, data.tbills, data.employees, data.tasks, data.leave, data.reports, data.entries, data.pos, data.requisitions, data.requests, data.goals, data.knowledge]);
 
   // Open via keyboard + custom event.
   useEffect(() => {

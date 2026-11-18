@@ -174,6 +174,7 @@ export interface AiSnapshot {
   reports: { title: string }[];
   ledger: { debit: number; credit: number };
   checks?: Finding[];
+  knowledge?: { name: string; folder: string; description: string; excerpt?: string; readable: boolean }[];
 }
 
 export interface LedgerCheck {
@@ -394,7 +395,14 @@ const ASSISTANT_SYSTEM =
   "work or who to assign a task to, give a clear RANKED shortlist (1, 2, 3) with a " +
   "one-line reason each — weigh (a) department/role fit, (b) current open-task load " +
   "(prefer people with spare capacity), and (c) availability (skip or flag anyone on " +
-  "leave). Be decisive and practical, like a good chief of staff.";
+  "leave). Be decisive and practical, like a good chief of staff.\n" +
+  "KNOWLEDGE LIBRARY: the snapshot may include `knowledge` — documents staff have uploaded to the " +
+  "File Library, each with a folder, a description and (for text/CSV/spreadsheet files) an extracted " +
+  "text excerpt. Treat this as the group's own source of truth: when a question relates to an uploaded " +
+  "document, use its excerpt and cite it by name and folder (e.g. \"per the Q3 Board Pack in Finance\"). " +
+  "If a relevant document is listed but has no excerpt (e.g. a PDF or Word file), tell the user it's in " +
+  "the library and summarise from its description, noting you can't read its full text yet. Combine this " +
+  "with your general knowledge to give the most complete, reliable answer.";
 
 function compactSnapshot(snap: AiSnapshot): string {
   // Per-person workload (for staffing / allocation questions).
@@ -424,6 +432,11 @@ function compactSnapshot(snap: AiSnapshot): string {
     ledger: snap.ledger,
     taskTotal: snap.tasks.length,
     checks: (snap.checks ?? []).slice(0, 8).map((c) => ({ module: c.moduleName, sev: c.severity, title: c.title, detail: c.detail })),
+    knowledge: (snap.knowledge ?? []).slice(0, 25).map((k) => ({
+      doc: k.name, folder: k.folder || "root", about: k.description,
+      // keep excerpts bounded so a big library doesn't blow up cost
+      content: k.readable && k.excerpt ? k.excerpt.slice(0, 1500) : undefined,
+    })),
   };
   return JSON.stringify(sum);
 }

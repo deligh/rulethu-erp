@@ -359,8 +359,27 @@ export interface Investor {
   createdAt: string;
 }
 
+// Knowledge library — uploaded documents that become part of the shared "one
+// source of truth" the AI reads from. Each record points at a file in Supabase
+// Storage and carries a description plus an extracted text excerpt (for
+// text/CSV/spreadsheet files) so the assistant can cite real content.
+export interface KnowledgeDoc {
+  id: string;
+  name: string;          // display name (original filename)
+  path: string;          // storage path within the bucket (includes folder)
+  folder: string;        // "" = root, else folder label
+  type: string;          // mime type
+  size: number;
+  description: string;   // what this document is (user-provided)
+  excerpt: string;       // extracted text (may be empty for pdf/word)
+  readable: boolean;     // true if we extracted text the AI can quote
+  uploadedBy: string;
+  createdAt: string;
+}
+
 // Collections that support generic add / patch.
 interface Collections {
+  knowledge: KnowledgeDoc[];
   deals: Deal[];
   loans: Loan[];
   pos: PurchaseOrder[];
@@ -488,6 +507,7 @@ const SEED: AppData = {
     { id: "BN-2", author: "Research Desk", text: "Lithium price risk → stress off-take economics", color: "var(--lz-blue-bg)", x: 44, y: 32, createdAt: "2026-11-16T00:00:00Z" },
     { id: "BN-3", author: "Gamu", text: "Dry-Port: corridor volumes +6% q/q", color: "var(--lz-green-bg)", x: 70, y: 22, createdAt: "2026-11-16T00:00:00Z" },
   ],
+  knowledge: [],
   holdings: [
     { id: "H-1", company: "Lithium Off-take SPV", sector: "Mining & Resources", stage: "Private Credit", invested: 30_000_000, fairValue: 21_500_000, ownership: 100, entryDate: "2025-08-05", status: "Watch", lead: "Blessed", note: "Lithium price soft; off-take economics under review.", createdAt: "2025-08-05T00:00:00Z" },
     { id: "H-2", company: "Harare Logistics Park", sector: "Real Estate", stage: "Real Assets", invested: 9_200_000, fairValue: 10_800_000, ownership: 65, entryDate: "2024-11-12", status: "Performing", lead: "Gamu", note: "Occupancy 94%; USD leases.", createdAt: "2024-11-12T00:00:00Z" },

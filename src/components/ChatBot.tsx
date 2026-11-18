@@ -72,6 +72,7 @@ export default function ChatBot() {
     reports: data.reports.map((r) => ({ title: r.title })),
     ledger: data.entries.reduce((a, e) => { for (const l of e.lines) { a.debit += l.debit || 0; a.credit += l.credit || 0; } return a; }, { debit: 0, credit: 0 }),
     checks: runChecks({ entries: data.entries, pos: data.pos, requisitions: data.requisitions, requests: data.requests, tbills: data.tbills, loans: data.loans, leave: data.leave, employees: data.employees, deals: data.deals, goals: data.goals }),
+    knowledge: data.knowledge.map((k) => ({ name: k.name, folder: k.folder, description: k.description, excerpt: k.excerpt, readable: k.readable })),
     };
   }, [data]);
 
