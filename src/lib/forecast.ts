@@ -8,7 +8,7 @@
 // so the projection self-corrects as gold actually moves. This is a MODEL /
 // SCENARIO, not a prediction — the UI labels it as such.
 
-export type Horizon = "weekly" | "monthly" | "yearly";
+export type Horizon = "daily" | "weekly" | "monthly" | "yearly";
 
 export interface GoldPoint { t: string; price: number }
 export interface ProjPoint { t: string; mid: number; lo: number; hi: number }
@@ -75,7 +75,8 @@ export const GOLD_HISTORY_SEED: GoldPoint[] = ([
 // View window (how far back to SHOW) and projection reach per horizon, so each
 // tab is visibly different: weekly = zoomed near-term, yearly = full long-run.
 const VIEW: Record<Horizon, { histYears: number; projMonths: number; stepDays: number }> = {
-  weekly: { histYears: 0.75, projMonths: 6, stepDays: 7 },
+  daily: { histYears: 0.34, projMonths: 1.5, stepDays: 3 }, // ~4 months back, ~6 weeks out, fine steps
+  weekly: { histYears: 0.9, projMonths: 6, stepDays: 7 },
   monthly: { histYears: 3, projMonths: 30, stepDays: 30 },
   yearly: { histYears: 25, projMonths: 62, stepDays: 91 }, // full history (2004+) → ~2031, quarterly steps
 };

@@ -454,6 +454,7 @@ interface AppData extends Collections {
   market: MarketSnapshot | null;   // latest shared market digest
   marketHistory: MarketSnapshot[]; // past full editions (news-hub history), newest first
   goldSeries: { t: string; price: number }[]; // stored live gold readings, for the projection model
+  orgConfig: Record<string, boolean>;        // admin-controlled feature flags (e.g. gold Excel download)
   digestDate: string | null;       // yyyy-mm-dd of the last auto-posted daily digest
 }
 
@@ -561,6 +562,7 @@ const SEED: AppData = {
   market: null,
   marketHistory: [],
   goldSeries: [],
+  orgConfig: {},
   digestDate: null,
 };
 
@@ -591,6 +593,7 @@ interface Ctx extends AppData {
   setMarket: (snap: MarketSnapshot) => void;
   pushMarketHistory: (edition: MarketSnapshot) => void;
   appendGold: (price: number) => void;
+  setOrgFlag: (key: string, value: boolean) => void;
   setDigestDate: (date: string) => void;
   // generic collection ops
   add: <K extends CKey>(key: K, item: Item<K>, note?: { title: string; body?: string; module?: string }) => void;
@@ -682,6 +685,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       }
       return { ...d, goldSeries: [...s, { t: new Date().toISOString(), price }].slice(-400) };
     });
+  }, []);
+
+  const setOrgFlag: Ctx["setOrgFlag"] = useCallback((key, value) => {
+    setData((d) => ({ ...d, orgConfig: { ...(d.orgConfig ?? {}), [key]: value } }));
   }, []);
 
   const setDigestDate: Ctx["setDigestDate"] = useCallback((date) => {
@@ -939,7 +946,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     ...data,
     hydrated,
     addEntry, importJournals, removeEntry, addLeave, setLeaveStatus, addClaim, setClaimStatus, addMessage, addChannel, addChannelMember, markAllRead, markNoteRead, notify, add, patch, remove, resetAll,
-    raiseRequest, fulfilRequest, setRequestStatus, setMarket, pushMarketHistory, appendGold, setDigestDate, setChannelContext, addChannelInsight, publishReport,
+    raiseRequest, fulfilRequest, setRequestStatus, setMarket, pushMarketHistory, appendGold, setOrgFlag, setDigestDate, setChannelContext, addChannelInsight, publishReport,
   };
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
