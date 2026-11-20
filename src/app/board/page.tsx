@@ -3,6 +3,7 @@
 import { useRef, useState, useCallback } from "react";
 import { useAppData, genId } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
+import { askClaude, aiLastError } from "@/lib/aiClient";
 import { PageHeader, Badge } from "@/components/ui";
 
 const COLORS = [
@@ -13,6 +14,38 @@ const COLORS = [
   "var(--lz-red-bg)",
 ];
 
+// One-click thinking frameworks — drop labelled zone notes in a grid.
+const FRAMEWORKS: Record<string, { title: string; cells: { text: string; x: number; y: number; color: string }[] }> = {
+  swot: {
+    title: "SWOT",
+    cells: [
+      { text: "STRENGTHS\n• ", x: 8, y: 8, color: "var(--lz-green-bg)" },
+      { text: "WEAKNESSES\n• ", x: 52, y: 8, color: "var(--lz-red-bg)" },
+      { text: "OPPORTUNITIES\n• ", x: 8, y: 52, color: "var(--lz-blue-bg)" },
+      { text: "THREATS\n• ", x: 52, y: 52, color: "var(--lz-yellow-bg)" },
+    ],
+  },
+  matrix: {
+    title: "Impact / Effort",
+    cells: [
+      { text: "QUICK WINS\nhigh impact · low effort\n• ", x: 8, y: 8, color: "var(--lz-green-bg)" },
+      { text: "BIG BETS\nhigh impact · high effort\n• ", x: 52, y: 8, color: "var(--lz-blue-bg)" },
+      { text: "FILL-INS\nlow impact · low effort\n• ", x: 8, y: 52, color: "var(--lz-yellow-bg)" },
+      { text: "MONEY PITS\nlow impact · high effort\n• ", x: 52, y: 52, color: "var(--lz-red-bg)" },
+    ],
+  },
+  thesis: {
+    title: "Deal thesis",
+    cells: [
+      { text: "THESIS\n• ", x: 6, y: 8, color: "var(--lz-blue-bg)" },
+      { text: "MARKET\n• ", x: 38, y: 8, color: "var(--lz-green-bg)" },
+      { text: "RISKS\n• ", x: 70, y: 8, color: "var(--lz-red-bg)" },
+      { text: "RETURNS\n• ", x: 20, y: 52, color: "var(--lz-purple-bg)" },
+      { text: "NEXT STEPS\n• ", x: 56, y: 52, color: "var(--lz-yellow-bg)" },
+    ],
+  },
+};
+
 export default function BoardPage() {
   const { boardNotes, add, patch, remove } = useAppData();
   const { user } = useAuth();
@@ -21,6 +54,52 @@ export default function BoardPage() {
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
   const [live, setLive] = useState<{ id: string; x: number; y: number } | null>(null);
   const [color, setColor] = useState(COLORS[0]);
+  const [topic, setTopic] = useState("");
+  const [aiBusy, setAiBusy] = useState<"" | "ideas" | "sum">("");
+  const [summary, setSummary] = useState<string | null>(null);
+
+  const brainstorm = async () => {
+    const t = topic.trim(); if (!t || aiBusy) return;
+    setAiBusy("ideas");
+    const text = await askClaude({
+      system:
+        "You are Rulethu AI facilitating a whiteboard brainstorm for an African investment group in Harare (gold & PGM mining, lithium, solar/PPAs, private equity, microfinance, ZSE/VFEX). " +
+        "Generate sharp, specific, varied sticky-note ideas for the topic — practical and Rulethu-relevant. " +
+        "Return ONLY a JSON array of 6 to 8 short strings, each under 14 words, no prose or code fences.",
+      prompt: `TOPIC: ${t}\n\nReturn the JSON array of sticky-note ideas now.`,
+      model: "sonnet",
+      maxTokens: 700,
+    });
+    let ideas: string[] = [];
+    try { const s = text?.trim() ?? ""; const a = s.indexOf("["), b = s.lastIndexOf("]"); if (a >= 0 && b > a) ideas = (JSON.parse(s.slice(a, b + 1)) as unknown[]).map(String).filter(Boolean); } catch { /* fallback below */ }
+    if (!ideas.length && text) ideas = text.split(/\n+/).map((l) => l.replace(/^[-*\d.\s]+/, "").trim()).filter((l) => l.length > 2).slice(0, 8);
+    if (!ideas.length) { setAiBusy(""); setSummary(`Couldn't brainstorm just now (${aiLastError() ?? "no response"}). Try again.`); return; }
+    ideas.slice(0, 8).forEach((idea, i) => {
+      add("boardNotes", { id: genId("BN"), author: "Rulethu AI", text: idea, color: COLORS[i % COLORS.length], x: 8 + (i % 4) * 22, y: 14 + Math.floor(i / 4) * 32, createdAt: new Date().toISOString() });
+    });
+    setAiBusy(""); setTopic("");
+  };
+
+  const summarizeBoard = async () => {
+    if (!boardNotes.length || aiBusy) return;
+    setAiBusy("sum"); setSummary(null);
+    const notesTxt = boardNotes.map((n) => `- ${n.text.replace(/\n/g, " ")}`).join("\n");
+    const text = await askClaude({
+      system:
+        "You are Rulethu AI. Turn a whiteboard of sticky notes into a crisp output for an investment team at an African investment group in Harare. " +
+        "Plain text, no markdown asterisks, with these short labelled sections: Themes: (2-4 bullets grouping the ideas); So what: (1-2 lines); Action items: (2-4 bullets, each 'Owner — action'). No preamble.",
+      prompt: `WHITEBOARD NOTES:\n${notesTxt}\n\nWrite it now:`,
+      model: "sonnet",
+      maxTokens: 800,
+    });
+    setSummary(text || `Couldn't summarize just now (${aiLastError() ?? "no response"}).`);
+    setAiBusy("");
+  };
+
+  const addFramework = (k: string) => {
+    const f = FRAMEWORKS[k]; if (!f) return;
+    f.cells.forEach((c) => add("boardNotes", { id: genId("BN"), author: f.title, text: c.text, color: c.color, x: c.x, y: c.y, createdAt: new Date().toISOString() }));
+  };
 
   const addNote = () => {
     add("boardNotes", {
@@ -79,6 +158,20 @@ export default function BoardPage() {
           </div>
         }
       />
+
+      {/* AI tools */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border p-2.5" style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}>
+        <span className="text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1 shrink-0" style={{ color: "var(--brand)" }}><span style={{ color: "var(--accent)" }}>✦</span> AI tools</span>
+        <input value={topic} onChange={(e) => setTopic(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") brainstorm(); }} placeholder="Brainstorm a topic… e.g. ways to de-risk the Solar IPP" className="flex-1 min-w-[200px] rounded-md border px-2.5 py-1.5 text-sm" style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }} />
+        <button onClick={brainstorm} disabled={aiBusy === "ideas" || !topic.trim()} className="rounded-md px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50 shrink-0" style={{ background: "var(--brand)" }}>{aiBusy === "ideas" ? "Thinking…" : "✨ Brainstorm"}</button>
+        <select onChange={(e) => { if (e.target.value) { addFramework(e.target.value); e.target.value = ""; } }} defaultValue="" className="rounded-md border px-2 py-1.5 text-sm shrink-0" style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }}>
+          <option value="">+ Framework…</option>
+          <option value="swot">SWOT</option>
+          <option value="matrix">Impact / Effort</option>
+          <option value="thesis">Deal thesis</option>
+        </select>
+        <button onClick={summarizeBoard} disabled={aiBusy === "sum" || !boardNotes.length} className="rounded-md border px-3 py-1.5 text-sm font-medium disabled:opacity-50 shrink-0" style={{ borderColor: "var(--border)", color: "var(--text)" }}>{aiBusy === "sum" ? "Summarizing…" : "📋 Summarize board"}</button>
+      </div>
 
       <div
         ref={boardRef}
@@ -139,6 +232,21 @@ export default function BoardPage() {
       <p className="mt-2 text-[11px]" style={{ color: "var(--text-faint)" }}>
         Drag a note by its top bar. Edit text inline. Pick a colour before adding. The board is shared with everyone and syncs across devices.
       </p>
+
+      {summary !== null && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setSummary(null)}>
+          <div className="w-full max-w-2xl rounded-xl border my-4 p-5" style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-bold inline-flex items-center gap-2" style={{ color: "var(--text)" }}><span style={{ color: "var(--accent)" }}>✦</span> Board summary</h2>
+              <button onClick={() => setSummary(null)} className="rounded-md border px-2.5 py-1 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>✕ Close</button>
+            </div>
+            <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text)" }}>{summary}</p>
+            <div className="mt-4 flex gap-2">
+              <button onClick={() => { navigator.clipboard?.writeText(summary); }} className="rounded-md px-3 py-1.5 text-sm font-semibold text-white" style={{ background: "var(--brand)" }}>Copy</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
