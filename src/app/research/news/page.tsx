@@ -177,6 +177,14 @@ export default function DailyMarketPage() {
       : "Live metals are current; the full market brief refreshes shortly.";
   };
 
+  // The briefing is the hub's heart — if the current snapshot has no stories
+  // (e.g. a metals-only refresh), fall back to the most recent stored edition
+  // that does, so there is always a rich read to click into.
+  const briefingStories =
+    (market?.stories && market.stories.length > 0)
+      ? market.stories
+      : (marketHistory?.find((e) => e.stories && e.stories.length > 0)?.stories ?? []);
+
   return (
     <div className="page-enter">
       <PageHeader
@@ -249,14 +257,14 @@ export default function DailyMarketPage() {
       )}
 
       {/* Today's briefing — expandable story cards (commodities + wider market) */}
-      {market && market.stories && market.stories.length > 0 && (
+      {market && briefingStories.length > 0 && (
         <div className="mb-5">
           <div className="flex items-baseline justify-between mb-2">
             <h2 className="text-sm font-bold uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>Today&apos;s briefing</h2>
-            <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>tap a card to read more</span>
+            <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>{briefingStories.length} stories · tap a card to read more</span>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {market.stories.map((s, i) => {
+            {briefingStories.map((s, i) => {
               const open = openStory === i;
               const impactCol = s.impact === "up" ? "var(--pos)" : s.impact === "down" ? "var(--neg)" : "var(--warn)";
               const impactLabel = s.impact === "up" ? "▲ Positive" : s.impact === "down" ? "▼ Watch risk" : "● Watch";

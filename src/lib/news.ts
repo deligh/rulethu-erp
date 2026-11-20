@@ -59,12 +59,15 @@ const MARKET_SYSTEM =
   "`value` is short (e.g. \"$2,655/oz\"). `change` is the day move (e.g. \"+1.2%\"). " +
   "`source` is a short label (e.g. \"Kitco\"). `insight` is ONE short clause on what " +
   "the move means for Rulethu. " +
-  "`stories` is the heart of the brief and a LEARNING HUB — write 6 to 8 punchy, current, genuinely interesting items spanning three areas: " +
+  "`stories` is the heart of the brief and a daily LEARNING HUB — the thing the whole team reads every morning and says 'wow'. " +
+  "Write 10 to 12 punchy, current, genuinely interesting items spanning a WIDE spread of subjects so there is always lots to click into: " +
   "(a) COMMODITIES / metals / energy that matter to Rulethu (2-3); " +
-  "(b) MACRO & MARKETS — US rates & dollar, Africa & SADC, Zimbabwe (ZiG/USD, ZSE/VFEX), global equities (1-2); " +
-  "(c) TECHNOLOGY & AI — the latest notable global tech/AI developments AND, importantly, AI & technology GAPS and OPPORTUNITIES in Africa " +
-  "(fintech, mobile money, data centres, connectivity, AI adoption, startups, policy) (2-3). " +
-  "Use varied `category` labels: Commodities, Energy, Macro, Africa & SADC, Equities, Technology, AI. " +
+  "(b) MACRO & MARKETS — US & global rates, the dollar, inflation, global equities (1-2); " +
+  "(c) AFRICA & SADC — Zimbabwe (ZiG/USD, ZSE/VFEX), regional economies, deals and policy (2); " +
+  "(d) TECHNOLOGY & AI — the latest global tech/AI developments AND, importantly, AI & technology GAPS and OPPORTUNITIES in Africa " +
+  "(fintech, mobile money, data centres, connectivity, AI adoption, startups, policy) (2-3); " +
+  "(e) a couple more from: CRYPTO & digital assets, GEOPOLITICS, ENERGY TRANSITION / climate finance, a notable GLOBAL COMPANY or DEAL, or a WORLD ECONOMY story (1-2). " +
+  "Make the set varied — no two cards on the same narrow topic. Use varied `category` labels: Commodities, Energy, Macro, Markets, Africa & SADC, Zimbabwe, Technology, AI, Crypto, Geopolitics, Deals, Economy. " +
   "Each story: `title` is a sharp headline (<9 words); `summary` is one vivid teaser line; `detail` is 2-3 sentences " +
   "with the actual facts/numbers; `takeaway` is one line on what it means for Rulethu. Make them genuinely interesting and the LATEST you can find. " +
   "`sources` lists the pages you used with real URLs. Keep `commentary` UNDER 90 words (2 short paragraphs) and `watch` to 4 short bullets. Output ONLY the JSON.";
@@ -103,7 +106,7 @@ function parseDigest(text: string): Partial<MarketSnapshot> | null {
           detail: String(s.detail ?? ""),
           impact: s.impact === "up" || s.impact === "down" ? s.impact : "watch",
           takeaway: s.takeaway != null ? String(s.takeaway) : undefined,
-        })).filter((s: NewsStory) => s.title && s.detail).slice(0, 8)
+        })).filter((s: NewsStory) => s.title && s.detail).slice(0, 12)
       : [];
     return {
       headline: String(obj.headline ?? "Market update"),
@@ -166,14 +169,15 @@ export async function fetchMarketDigest(prev?: MarketSnapshot | null): Promise<M
         "• ZSE All Share Index — search the latest value/close from zse.co.zw or african-markets.com; set `change` to the day move, or 'n/a' only if just a prior close is available.\n" +
         "Give each real row a short `change`, a `source`, and a one-line Rulethu `insight`. Aim for 5–7 REAL price rows total " +
         "(the three live metals plus whatever of the above you can actually price today). Order: Gold, Platinum, Palladium, then the rest.\n" +
-        "NEWS — then do up to 3 web_search calls for today's headlines to write the `stories` (markets AND technology/AI, including AI & tech in Africa).\n" +
+        "NEWS — this is the priority: do up to 4 web_search calls for today's headlines across the subjects above and write a RICH set of 10-12 `stories` " +
+        "(commodities, macro/markets, Africa & SADC, technology & AI incl. Africa, plus crypto/geopolitics/energy-transition/a global deal). Make it the day's go-to read.\n" +
         "Return ONLY the JSON object.",
       webFetch: true,
-      fetchMaxUses: 3,
+      fetchMaxUses: 2,
       webSearch: true,
       searchMaxUses: 6,
-      maxTokens: 7500,
-      timeoutMs: 125_000,
+      maxTokens: 8000,
+      timeoutMs: 150_000,
     });
     if (!text) {
       const { aiLastError } = await import("./aiClient");
