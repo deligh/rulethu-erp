@@ -138,3 +138,52 @@ export function tasksPdf(opts: {
   footer(doc);
   doc.save(opts.filename.endsWith(".pdf") ? opts.filename : `${opts.filename}.pdf`);
 }
+
+export interface ResearchDoc {
+  title: string;
+  scope: string;              // e.g. "Company · Zimbabwe"
+  executiveSummary: string;
+  keyFindings: string[];
+  sections: { heading: string; body: string }[];
+  risks: string[];
+  outlook: string;
+  sources: { label: string; url: string }[];
+  author?: string;
+}
+
+/** Deep-research report → branded A4 PDF. */
+export function researchPdf(r: ResearchDoc) {
+  const doc = new jsPDF({ format: "a4", unit: "mm" });
+  const W = doc.internal.pageSize.getWidth();
+  header(doc, r.title || "Research report", "Deep Research · Rulethu AI");
+  let y = 42;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
+  doc.text(`${r.scope ? r.scope + "  ·  " : ""}${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })}${r.author ? `  ·  ${r.author}` : ""}`, 14, y);
+  y += 8;
+
+  const para = (label: string, text: string) => {
+    if (!text) return;
+    y = section(doc, label, y);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(...INK);
+    const lines = doc.splitTextToSize(text, W - 28) as string[];
+    if (y + lines.length * 5 > doc.internal.pageSize.getHeight() - 20) { doc.addPage(); y = 20; }
+    doc.text(lines, 14, y); y += lines.length * 5 + 4;
+  };
+
+  para("Executive summary", r.executiveSummary);
+  if (r.keyFindings.length) { y = section(doc, "Key findings", y); y = bullets(doc, r.keyFindings, y) + 2; }
+  for (const s of r.sections) para(s.heading, s.body);
+  if (r.risks.length) { y = section(doc, "Risks & watch-items", y); y = bullets(doc, r.risks, y) + 2; }
+  para("Outlook", r.outlook);
+  if (r.sources.length) {
+    y = section(doc, "Sources", y);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
+    for (const s of r.sources) {
+      if (y > doc.internal.pageSize.getHeight() - 16) { doc.addPage(); y = 20; }
+      const line = doc.splitTextToSize(`• ${s.label} — ${s.url}`, W - 28) as string[];
+      doc.text(line, 14, y); y += line.length * 4.5 + 1;
+    }
+  }
+  footer(doc);
+  doc.save(`${(r.title || "research").replace(/[^\w]+/g, "-").slice(0, 50)}.pdf`);
+}

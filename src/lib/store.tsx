@@ -274,6 +274,7 @@ export interface MarketPrice {
   raw?: number;        // raw numeric price (live feed) — for honest change math
   live?: boolean;      // true if from a live market feed (not the AI brief)
   at?: string;         // ISO time the live feed last updated this price
+  aiNote?: boolean;    // true when `insight`/`change` were authored by the AI brief
 }
 export interface NewsSource { label: string; url: string }
 export interface NewsStory {

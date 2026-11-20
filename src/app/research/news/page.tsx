@@ -97,13 +97,24 @@ export default function DailyMarketPage() {
     setAiBusy(parentId);
     try {
       const { askClaude, aiLastError } = await import("@/lib/aiClient");
-      const brief = market
-        ? `TODAY'S MARKET BRIEF:\nHeadline: ${market.headline}\nPrices: ${market.prices.map((p) => `${p.name} ${p.value} ${p.change ?? ""}`).join("; ")}\nCommentary: ${market.commentary}\nWatch: ${market.watch.join("; ")}`
-        : "No market brief is loaded.";
+      const asOf = market
+        ? new Date(market.generatedAt).toLocaleString("en-GB", { timeZone: "Africa/Harare", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+        : "n/a";
+      const priceLines = market?.prices?.length
+        ? market.prices.map((p) => `- ${p.name}: ${p.value}${p.change ? ` (${p.change})` : ""}${p.live ? " — live" : ""}`).join("\n")
+        : "- (no levels loaded)";
+      // Only pass the desk commentary when it's a full brief; the metals-only
+      // fallback commentary describes how the brief was built and must not leak.
+      const deskNote = market && market.stories && market.stories.length ? `\nDesk take: ${market.commentary}` : "";
+      const watch = market?.watch?.length ? `\nWatch: ${market.watch.join("; ")}` : "";
+      const levels = `CURRENT MARKET LEVELS (as of ${asOf} CAT; rows marked "live" are real-time spot prices):\n${priceLines}${deskNote}${watch}`;
       const nowStr = new Date().toLocaleString("en-GB", { timeZone: "Africa/Harare", weekday: "long", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
       const text = await askClaude({
-        system: `You are Rulethu AI on the market desk at an African investment group in Harare. RIGHT NOW it is ${nowStr} Central Africa Time (UTC+2) — treat this as the current date and time, do not say you cannot tell the time. A colleague tagged you on the daily market brief. Answer their question clearly and expand/explain, always linking the market moves to the Zimbabwe / SADC and Rulethu context (gold & PGM mining, lithium, solar/PPAs, ZSE/VFEX, ZiG/USD). Be concrete and practical, 1-3 short paragraphs. Plain text — no markdown asterisks.`,
-        prompt: `${brief}\n\nThread so far: ${threadText}\n\nColleague's question: ${question}\n\nAnswer:`,
+        system: `You are Rulethu AI on the market desk at an African investment group in Harare. RIGHT NOW it is ${nowStr} Central Africa Time (UTC+2) — treat this as the current date and time. A colleague tagged you on the daily market brief. ` +
+          `Treat the levels given to you as current and authoritative. When asked a price, answer directly and plainly — e.g. "Gold is trading around $3,551/oz." ` +
+          `NEVER discuss how the brief was produced, who authored it, whether figures were searched or fetched, or caveats about "the feed" or timestamps — the colleague does not care how the number was obtained, only what it is and what it means. ` +
+          `After the figure, add a brief, concrete Rulethu read-through where useful (gold & PGM mining, lithium, solar/PPAs, ZSE/VFEX, ZiG/USD). Keep it to 1–3 short paragraphs. Plain text — no markdown asterisks.`,
+        prompt: `${levels}\n\nThread so far: ${threadText}\n\nColleague's question: ${question}\n\nAnswer plainly:`,
         model: "haiku",
         maxTokens: 1000,
       });
@@ -136,6 +147,19 @@ export default function DailyMarketPage() {
       {c.isAI ? "✦" : c.author.slice(0, 1).toUpperCase()}
     </div>
   );
+
+  // Belt-and-braces: never display legacy build-plumbing text that may still be
+  // sitting in an older cached/synced snapshot from before this was cleaned up.
+  const SLOP = /updates on its own|no ai needed|couldn'?t be generated|needs redeploying|web tools hit a limit|press .?refresh/i;
+  const cleanInsight = (s?: string) => (s && !SLOP.test(s) ? s.trim() : undefined);
+  const cleanCommentary = (s?: string): string => {
+    if (!s) return "";
+    if (!SLOP.test(s)) return s;
+    const live = (market?.prices ?? []).filter((p) => p.live && p.value);
+    return live.length
+      ? live.map((p) => `${p.name.split(/[ (]/)[0]} ${p.value}`).join("  ·  ") + " — live spot levels driving our mining earnings and PGM basket. The full brief refreshes shortly."
+      : "Live metals are current; the full market brief refreshes shortly.";
+  };
 
   return (
     <div className="page-enter">
@@ -186,8 +210,11 @@ export default function DailyMarketPage() {
                 </div>
                 <div className="mt-1 text-lg font-bold" style={{ color: "var(--text)" }}>{p.value}</div>
                 {p.change && <div className="mt-0.5 text-xs font-semibold" style={{ color: col }}>{arrow} {p.change}</div>}
-                {p.insight && <div className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--text-muted)" }}>{p.insight}</div>}
-                {p.source && <div className="mt-1 text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>via {p.source}</div>}
+                {cleanInsight(p.insight) && <div className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--text-muted)" }}>{cleanInsight(p.insight)}</div>}
+                <div className="mt-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+                  {p.source && <span>via {p.source}</span>}
+                  {p.live && p.at && <span style={{ textTransform: "none" }}>· {timeAgo(p.at)}</span>}
+                </div>
               </div>
             );
           })}
@@ -241,7 +268,7 @@ export default function DailyMarketPage() {
             <span className="shrink-0 text-[11px]" style={{ color: "var(--text-faint)" }}>as of {timeAgo(market.generatedAt)}</span>
           </div>
           <div className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-muted)" }}>
-            <Bold text={market.commentary} />
+            <Bold text={cleanCommentary(market.commentary)} />
           </div>
           {market.watch.length > 0 && (
             <div className="mt-4">
