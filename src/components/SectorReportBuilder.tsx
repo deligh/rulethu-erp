@@ -125,6 +125,8 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
   type Verdict = "ready" | "review" | "insufficient";
   const [screening, setScreening] = useState<{ verdict: Verdict; notes: string[] } | null>(null);
   const [recommendation, setRecommendation] = useState<string>("");
+  const [gaps, setGaps] = useState<string[]>([]); // sectors the AI could not source — fill manually
+  const [checking, setChecking] = useState(false); // re-check (re-correct) in progress
   const autoRan = useRef(false);
 
   const setSector = (i: number, patch: Partial<SectorInput>) =>
@@ -161,16 +163,21 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
       "metric (value + short label) where sensible. Also write a 2-3 sentence " +
       "executive summary. Base it on the dailies; don't invent specific figures " +
       "you weren't given.\n" +
+      "CRITICAL — only fill a sector from data you were actually given. If the supplied dailies and market " +
+      "context contain NOTHING on a sector, do NOT invent it: leave that sector's highlight and commentary EMPTY " +
+      "and add its exact name to `gaps`. It is far better to flag a gap for the researcher to fill manually than " +
+      "to fabricate coverage.\n" +
       "THEN SCREEN YOUR OWN OUTPUT as a diligence check before handing it to the lead researcher: " +
       "verify each sector's highlight/commentary is actually supported by the supplied dailies and market context; " +
       "flag any figure or claim you could not substantiate; note sectors with thin or no source coverage this period; " +
       "and check for internal contradictions. Then give the lead researcher a clear recommendation. " +
       "Set `verdict` to 'ready' (clean, publish-ready), 'review' (publishable after the noted edits) or " +
-      "'insufficient' (too few dailies to consolidate reliably). `notes`: 0–5 concise screening flags. " +
-      "`recommendation`: 1–2 sentences telling the lead what to do (publish as-is, edit X first, or gather more dailies).\n" +
+      "'insufficient' (too few dailies to consolidate reliably — many gaps). `notes`: 0–5 concise screening flags. " +
+      "`gaps`: exact names of sectors you could NOT source and left empty for the researcher to fill manually. " +
+      "`recommendation`: 1–2 sentences telling the lead what to do (publish as-is, edit X first, or fill the listed gaps and re-check).\n" +
       "Return ONLY JSON — no prose, no code fences — EXACTLY:\n" +
       '{"summary": string, "sectors": [{"name": string, "sentiment": "Positive"|"Neutral"|"Negative", "highlight": string, "commentary": string, "metricValue": string, "metricLabel": string}], ' +
-      '"screening": {"verdict": "ready"|"review"|"insufficient", "notes": [string]}, "recommendation": string}\n' +
+      '"screening": {"verdict": "ready"|"review"|"insufficient", "notes": [string]}, "gaps": [string], "recommendation": string}\n' +
       "Use the exact sector names provided, in that order.";
     const text = await askClaude({
       system,
@@ -212,9 +219,14 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
             notes: Array.isArray(sc.notes) ? sc.notes.map(String).filter(Boolean).slice(0, 6) : [],
           });
         }
+        const gapList = Array.isArray(obj.gaps) ? obj.gaps.map(String).filter(Boolean) : [];
+        setGaps(gapList);
         if (obj.recommendation != null) setRecommendation(String(obj.recommendation));
         setAiDrafted(true);
-        setAiMsg(`Draft ready — consolidated from ${sourceDailies.length} daily report${sourceDailies.length === 1 ? "" : "s"}${ctx.marketCommentary ? " + live market" : ""}. Review the desk's recommendation below, edit if needed, then Publish.`);
+        setAiMsg(
+          `Draft ready — consolidated from ${sourceDailies.length} daily report${sourceDailies.length === 1 ? "" : "s"}${ctx.marketCommentary ? " + live market" : ""}.` +
+          (gapList.length ? ` ${gapList.length} sector${gapList.length === 1 ? "" : "s"} had no source data this period — fill ${gapList.length === 1 ? "it" : "them"} manually below, then Re-check.` : " Review the desk's recommendation below, edit if needed, then Publish."),
+        );
       } catch {
         setAiMsg("The AI draft came back malformed — try again, or fill the sectors manually.");
       }
@@ -222,6 +234,58 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
       setAiMsg("Couldn't reach the AI just now. You can still fill the report manually, or try again.");
     }
     setAiBusy(false);
+  };
+
+  /** Re-check (re-correct): the researcher has filled the flagged gaps manually,
+   *  now they run it again. This SCREENS the current draft (incl. manual edits)
+   *  WITHOUT rewriting it — it re-corrects the verdict, notes and remaining gaps
+   *  so they can read and publish. */
+  const reCheck = async () => {
+    setChecking(true); setAiMsg(null);
+    const current = sectors.map((s) => ({
+      name: s.name, sentiment: s.sentiment,
+      highlight: s.highlight.trim(), commentary: s.commentary.trim(),
+      metric: s.metricValue.trim() ? `${s.metricValue} ${s.metricLabel}`.trim() : "",
+    }));
+    const system =
+      "You are Rulethu & Co.'s lead research screener. Below is a " + period + " sector report draft that was " +
+      "consolidated from the period's daily reports and then edited manually by the researcher. " +
+      "DO NOT rewrite or reword it. SCREEN it only: confirm each sector now has adequate content, that claims are " +
+      "coherent and not internally contradictory, and that nothing obviously unsupported slipped in. " +
+      "List any sector that is STILL empty or too thin to publish in `gaps` (exact names). " +
+      "Set `verdict`: 'ready' (nothing left to fix — publish), 'review' (fine after the noted tweaks), " +
+      "'insufficient' (still too many empty sectors). `notes`: 0–5 concise flags. " +
+      "`recommendation`: 1–2 sentences — tell the lead to publish, or exactly what remains.\n" +
+      'Return ONLY JSON — no prose, no fences — EXACTLY: {"verdict":"ready"|"review"|"insufficient","notes":[string],"gaps":[string],"recommendation":string}';
+    const text = await askClaude({
+      system,
+      prompt: `SOURCE DAILIES (JSON):\n${JSON.stringify(sourceDailies)}\n\nCURRENT DRAFT (JSON):\n${JSON.stringify(current)}\n\nRe-screen it now.`,
+      model: "sonnet",
+      maxTokens: 1200,
+    });
+    if (text) {
+      try {
+        let t = text.trim();
+        const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        if (fence) t = fence[1].trim();
+        const a = t.indexOf("{"); const b = t.lastIndexOf("}");
+        if (a >= 0 && b > a) t = t.slice(a, b + 1);
+        const obj = JSON.parse(t);
+        const v = obj.verdict;
+        setScreening({
+          verdict: v === "ready" || v === "insufficient" ? v : "review",
+          notes: Array.isArray(obj.notes) ? obj.notes.map(String).filter(Boolean).slice(0, 6) : [],
+        });
+        setGaps(Array.isArray(obj.gaps) ? obj.gaps.map(String).filter(Boolean) : []);
+        if (obj.recommendation != null) setRecommendation(String(obj.recommendation));
+        setAiMsg(v === "ready" ? "Re-checked — the report is clean and ready to publish." : "Re-checked — see the updated recommendation below.");
+      } catch {
+        setAiMsg("The re-check came back malformed — try again.");
+      }
+    } else {
+      setAiMsg("Couldn't reach the AI to re-check just now. Try again.");
+    }
+    setChecking(false);
   };
 
   // Minimise manual work: auto-draft once on open when there are dailies to roll
@@ -237,7 +301,12 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
     return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
   }, [dateStr]);
 
-  const filledCount = sectors.filter((s) => s.highlight.trim() || s.commentary.trim()).length;
+  const isEmpty = (s: SectorInput) => !s.highlight.trim() && !s.commentary.trim();
+  const filledCount = sectors.filter((s) => !isEmpty(s)).length;
+  const gapSet = useMemo(() => new Set(gaps.map((g) => g.toLowerCase())), [gaps]);
+  // Flagged gaps the researcher still hasn't filled in.
+  const outstanding = sectors.filter((s) => gapSet.has(s.name.toLowerCase()) && isEmpty(s)).length;
+  const noEditions = sourceDailies.length === 0;
 
   const html = useMemo(
     () => buildReportHtml({ period, reportType, title, dateLabel, author, summary, sectors }),
@@ -284,8 +353,13 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
         actions={
           <div className="flex items-center gap-2">
             <button onClick={draftWithAI} disabled={aiBusy} className="rounded-md px-3 py-2 text-sm font-semibold text-white disabled:opacity-60" style={{ background: "var(--accent)", color: "#1a1205" }}>
-              {aiBusy ? "Consolidating…" : "✨ Draft with AI"}
+              {aiBusy ? "Consolidating…" : aiDrafted ? "✨ Re-draft" : "✨ Draft with AI"}
             </button>
+            {aiDrafted && (
+              <button onClick={reCheck} disabled={checking || aiBusy} className="rounded-md border px-3 py-2 text-sm font-semibold disabled:opacity-60" style={{ borderColor: "var(--brand)", color: "var(--brand)" }}>
+                {checking ? "Re-checking…" : "↻ Re-check"}
+              </button>
+            )}
             <button onClick={download} className="rounded-md border px-3 py-2 text-sm font-medium" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>⬇ Download PDF</button>
             <button onClick={publish} disabled={publishing} className="rounded-md px-4 py-2 text-sm font-semibold text-white disabled:opacity-60" style={{ background: "var(--brand)" }}>{publishing ? "Publishing…" : "Publish to group"}</button>
           </div>
@@ -293,15 +367,23 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
       />
       <ModuleTabs moduleKey="research" />
 
-      {/* AI consolidation banner */}
-      <div className="mb-4 rounded-lg border p-3 flex flex-wrap items-center gap-3" style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}>
-        <span className="text-sm" style={{ color: "var(--text-muted)" }}>
-          <b style={{ color: "var(--text)" }}>AI consolidation:</b> let Rulethu AI read this {period === "Weekly" ? "week" : "month"}&apos;s <b>{sourceDailies.length}</b> daily report{sourceDailies.length === 1 ? "" : "s"} and draft the {period.toLowerCase()} report for you to review.
-        </span>
-        <button onClick={draftWithAI} disabled={aiBusy} className="ml-auto rounded-md px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60" style={{ background: "var(--brand)" }}>
-          {aiBusy ? "Consolidating…" : aiDrafted ? "Re-draft" : "Draft with AI"}
-        </button>
-      </div>
+      {/* No editions this period — nothing to auto-consolidate from */}
+      {noEditions ? (
+        <div className="mb-4 rounded-lg border p-3 flex flex-wrap items-center gap-3" style={{ background: "var(--surface)", borderColor: "var(--warn)", boxShadow: "var(--shadow-card)" }}>
+          <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+            <b style={{ color: "var(--warn)" }}>No daily editions found for this {period === "Weekly" ? "week" : "month"}.</b> This report builds automatically from the daily market intelligence stored in the Library. Publish a daily edition first and it will auto-draft here — or fill the sectors in manually below, then <b>Re-check</b> and publish.
+          </span>
+        </div>
+      ) : (
+        <div className="mb-4 rounded-lg border p-3 flex flex-wrap items-center gap-3" style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}>
+          <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+            <b style={{ color: "var(--text)" }}>Automatic consolidation:</b> Rulethu AI reads this {period === "Weekly" ? "week" : "month"}&apos;s <b>{sourceDailies.length}</b> stored daily edition{sourceDailies.length === 1 ? "" : "s"}, drafts the {period.toLowerCase()} report, and screens it. You review, fill any flagged gaps, <b>Re-check</b>, then publish — at your discretion.
+          </span>
+          <button onClick={draftWithAI} disabled={aiBusy} className="ml-auto rounded-md px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60" style={{ background: "var(--brand)" }}>
+            {aiBusy ? "Consolidating…" : aiDrafted ? "Re-draft" : "Draft with AI"}
+          </button>
+        </div>
+      )}
       {aiMsg && (
         <div className="mb-4">
           <Badge tone={aiDrafted ? "info" : "warn"}>{aiMsg}</Badge>
@@ -321,6 +403,11 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
               <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>· AI screening for the lead researcher</span>
             </div>
             {recommendation && <p className="text-sm" style={{ color: "var(--text)" }}>{recommendation}</p>}
+            {outstanding > 0 && (
+              <p className="mt-2 text-[13px] font-medium" style={{ color: "var(--warn)" }}>
+                ⚠ {outstanding} sector{outstanding === 1 ? "" : "s"} still need{outstanding === 1 ? "s" : ""} manual input (highlighted below). Fill {outstanding === 1 ? "it" : "them"} in, then press <b>↻ Re-check</b> to re-validate before publishing.
+              </p>
+            )}
             {screening && screening.notes.length > 0 && (
               <ul className="mt-2 space-y-1">
                 {screening.notes.map((n, i) => (
@@ -330,7 +417,7 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
                 ))}
               </ul>
             )}
-            <p className="mt-2 text-[11px]" style={{ color: "var(--text-faint)" }}>The desk screened its own draft against this period&apos;s dailies. Edit anything below, then Publish — nothing is published automatically.</p>
+            <p className="mt-2 text-[11px]" style={{ color: "var(--text-faint)" }}>The desk screened its own draft against this period&apos;s dailies. Edit anything below, fill any flagged gaps, Re-check, then Publish — nothing is published automatically.</p>
           </div>
         );
       })()}
@@ -361,14 +448,24 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
             </label>
           </Card>
 
-          {sectors.map((s, i) => (
-            <Card key={s.name} className="space-y-2">
+          {sectors.map((s, i) => {
+            const flagged = gapSet.has(s.name.toLowerCase());
+            const needsInput = flagged && isEmpty(s); // flagged AND still empty
+            return (
+            <Card key={s.name} className="space-y-2" style={needsInput ? { borderColor: "var(--warn)" } : undefined}>
               <div className="flex items-center justify-between">
-                <h3 className="font-semibold" style={{ color: "var(--text)" }}>{s.name}</h3>
+                <h3 className="font-semibold flex items-center gap-2" style={{ color: "var(--text)" }}>
+                  {s.name}
+                  {needsInput && <span className="text-[10px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5" style={{ color: "var(--warn)", border: "1px solid var(--warn)" }}>Fill manually</span>}
+                  {flagged && !isEmpty(s) && <span className="text-[10px] font-semibold" style={{ color: "var(--pos)" }}>✓ filled</span>}
+                </h3>
                 <select value={s.sentiment} onChange={(e) => setSector(i, { sentiment: e.target.value as Sentiment })} className="rounded-md border px-2 py-1 text-xs" style={inputStyle}>
                   <option>Positive</option><option>Neutral</option><option>Negative</option>
                 </select>
               </div>
+              {needsInput && (
+                <p className="text-[12px]" style={{ color: "var(--warn)" }}>No source data found for this sector this {period === "Weekly" ? "week" : "month"} — please fill it in manually, then Re-check.</p>
+              )}
               <input value={s.highlight} onChange={(e) => setSector(i, { highlight: e.target.value })} placeholder="Headline / key highlight" className="w-full rounded-md border px-3 py-2 text-sm font-medium" style={inputStyle} />
               <textarea value={s.commentary} onChange={(e) => setSector(i, { commentary: e.target.value })} rows={2} placeholder="Commentary…" className="w-full rounded-md border px-3 py-2 text-sm" style={inputStyle} />
               <div className="grid grid-cols-2 gap-2">
@@ -376,7 +473,8 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
                 <input value={s.metricLabel} onChange={(e) => setSector(i, { metricLabel: e.target.value })} placeholder="Metric label (e.g. corridor volumes)" className="rounded-md border px-3 py-2 text-sm" style={inputStyle} />
               </div>
             </Card>
-          ))}
+            );
+          })}
         </div>
 
         {/* Live preview */}
