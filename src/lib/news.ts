@@ -40,15 +40,12 @@ const MARKET_SYSTEM =
   "— power/solar, private equity and ZSE/VFEX equities). Use web search to find " +
   "the LATEST, ACCURATE prices and day moves, then write a tight daily brief for " +
   "the group's investment team, with a Zimbabwe / SADC lens and USD framing.\n" +
-  "SOURCING — accuracy matters, cite where each number came from:\n" +
-  "• Gold, Silver, Platinum, Palladium → use KITCO (kitco.com, e.g. " +
-  "kitco.com/charts/gold) as the primary source.\n" +
-  "• Brent Crude → Kitco or oilprice.com.\n" +
-  "• Lithium carbonate → Trading Economics or SMM (shanghai metals market).\n" +
-  "• ZSE All Share Index → zse.co.zw or african-markets.com; if no live figure, " +
-  "give the last confirmed close and set change to \"n/a\".\n" +
-  "Prefer these sources; do not state a price you did not actually find — if " +
-  "genuinely unavailable, give your best recent estimate and set change \"n/a\".\n" +
+  "SOURCING — accuracy matters, cite where each number came from. Gold, Platinum and " +
+  "Palladium are supplied to you LIVE from our own feed — use those exact levels. For the " +
+  "other commodities (Brent crude, white maize, wheat, urea/fertiliser) and the ZSE All Share, " +
+  "a web_search for the current price is sufficient — take the figure from the search results; " +
+  "a page fetch is not required. Only state a price you actually found; if you cannot find a " +
+  "real current/recent figure for an item, OMIT that price row rather than guessing or marking it 'Not retrieved'.\n" +
   "Return ONLY a single JSON object — no prose, no code fences — EXACTLY:\n" +
   '{"headline": string, "prices": [{"name": string, "value": string, "change": string, ' +
   '"dir": "up"|"down"|"flat", "source": string, "insight": string}], ' +
@@ -56,14 +53,18 @@ const MARKET_SYSTEM =
   '"stories": [{"title": string, "category": "Commodities"|"Macro"|"Africa & SADC"|"Equities"|"Energy"|"FX", ' +
   '"summary": string, "detail": string, "impact": "up"|"down"|"watch", "takeaway": string}], ' +
   '"sources": [{"label": string, "url": string}]}\n' +
-  "Include these prices in order: Gold (spot, $/oz), Platinum ($/oz), Brent Crude " +
-  "($/bbl), Lithium carbonate (per tonne), ZSE All Share Index. " +
+  "Include a Gold, Platinum and Palladium row (live levels), then add the commodities you " +
+  "could actually price today from: Brent Crude ($/bbl), White maize ($/tonne), Wheat ($/tonne), " +
+  "Urea/fertiliser ($/tonne), and the ZSE All Share Index. Omit any you could not price. " +
   "`value` is short (e.g. \"$2,655/oz\"). `change` is the day move (e.g. \"+1.2%\"). " +
   "`source` is a short label (e.g. \"Kitco\"). `insight` is ONE short clause on what " +
   "the move means for Rulethu. " +
-  "`stories` is the heart of the brief — write 5 to 6 punchy, current news items for today: " +
-  "at least 3 on COMMODITIES/metals/energy that matter to Rulethu, and the rest on the OTHER side — " +
-  "macro (US rates, dollar, inflation), Africa & SADC markets, Zimbabwe (ZiG/USD, ZSE/VFEX), and global equities. " +
+  "`stories` is the heart of the brief and a LEARNING HUB — write 6 to 8 punchy, current, genuinely interesting items spanning three areas: " +
+  "(a) COMMODITIES / metals / energy that matter to Rulethu (2-3); " +
+  "(b) MACRO & MARKETS — US rates & dollar, Africa & SADC, Zimbabwe (ZiG/USD, ZSE/VFEX), global equities (1-2); " +
+  "(c) TECHNOLOGY & AI — the latest notable global tech/AI developments AND, importantly, AI & technology GAPS and OPPORTUNITIES in Africa " +
+  "(fintech, mobile money, data centres, connectivity, AI adoption, startups, policy) (2-3). " +
+  "Use varied `category` labels: Commodities, Energy, Macro, Africa & SADC, Equities, Technology, AI. " +
   "Each story: `title` is a sharp headline (<9 words); `summary` is one vivid teaser line; `detail` is 2-3 sentences " +
   "with the actual facts/numbers; `takeaway` is one line on what it means for Rulethu. Make them genuinely interesting and the LATEST you can find. " +
   "`sources` lists the pages you used with real URLs. Keep `commentary` UNDER 90 words (2 short paragraphs) and `watch` to 4 short bullets. Output ONLY the JSON.";
@@ -86,7 +87,7 @@ function parseDigest(text: string): Partial<MarketSnapshot> | null {
           dir: p.dir === "up" || p.dir === "down" ? p.dir : "flat",
           source: p.source != null ? String(p.source) : undefined,
           insight: p.insight != null ? String(p.insight) : undefined,
-        })).filter((p: MarketPrice) => p.name && p.value)
+        })).filter((p: MarketPrice) => p.name && p.value && !/^(—|-|n\/?a|not retrieved|unavailable|tbd)\.?$/i.test(p.value.trim()))
       : [];
     const sources: NewsSource[] = Array.isArray(obj.sources)
       ? obj.sources
@@ -155,20 +156,23 @@ export async function fetchMarketDigest(prev?: MarketSnapshot | null): Promise<M
             "(web_search the day move if you need it) and a one-line Rulethu `insight` on what THAT move means for us. " +
             "Your `headline`, `commentary`, `watch` items and `stories` must be grounded in these actual levels and their recent movements — comment on what is really happening to our metals.\n"
           : "") +
-        "OTHER PRICES — use the web_fetch tool to read these pages directly (do NOT rely on open web search for the price):\n" +
-        "• Brent Crude ($/bbl): fetch https://oilprice.com/\n" +
-        "• Lithium carbonate (per tonne): fetch https://tradingeconomics.com/commodity/lithium\n" +
-        "• ZSE All Share Index: fetch https://www.zse.co.zw/ (or https://www.african-markets.com/en/stock-markets/zse)\n" +
-        "Read the current number from each page. Only if a fetch genuinely returns nothing, use web_search as a fallback for that one item; " +
-        "if still unavailable, give your best recent figure and set `change` to 'n/a' — but DO fetch first.\n" +
-        "Include price rows in this order: Gold, Platinum, Palladium, Brent Crude, Lithium carbonate, ZSE All Share Index.\n" +
-        "NEWS — then do up to 2 web_search calls for today's market & Africa/SADC headlines to write the `stories`.\n" +
+        "OTHER PRICES — add these using web_search (a page fetch is NOT required — take the current number straight from the search results). " +
+        "ONLY include a row when you find a real current or very recent figure. If you cannot price an item, simply OMIT that row entirely — " +
+        "NEVER output a 'Not retrieved', '—' or 'n/a'-value placeholder row:\n" +
+        "• Brent Crude ($/bbl) — search \"Brent crude price today\" (it is widely quoted; do not mark it unavailable).\n" +
+        "• White maize ($/tonne) — Zimbabwe's staple; search the current SAFEX white maize or regional maize price.\n" +
+        "• Wheat ($/tonne) — search the current wheat price.\n" +
+        "• Urea / fertiliser ($/tonne) — search the current urea fertiliser price.\n" +
+        "• ZSE All Share Index — search the latest value/close from zse.co.zw or african-markets.com; set `change` to the day move, or 'n/a' only if just a prior close is available.\n" +
+        "Give each real row a short `change`, a `source`, and a one-line Rulethu `insight`. Aim for 5–7 REAL price rows total " +
+        "(the three live metals plus whatever of the above you can actually price today). Order: Gold, Platinum, Palladium, then the rest.\n" +
+        "NEWS — then do up to 3 web_search calls for today's headlines to write the `stories` (markets AND technology/AI, including AI & tech in Africa).\n" +
         "Return ONLY the JSON object.",
       webFetch: true,
-      fetchMaxUses: 6,
+      fetchMaxUses: 3,
       webSearch: true,
-      searchMaxUses: 3,
-      maxTokens: 7000,
+      searchMaxUses: 6,
+      maxTokens: 7500,
       timeoutMs: 125_000,
     });
     if (!text) {
@@ -179,6 +183,7 @@ export async function fetchMarketDigest(prev?: MarketSnapshot | null): Promise<M
       if (parsed && parsed.prices && parsed.prices.length) {
         lastDigestReason = null;
         const snap = { ...base, ...parsed } as MarketSnapshot;
+        snap.editionId = snap.generatedAt; // stable id for this full edition (history)
         snap.prices = mergeLiveMetals(snap.prices, metals, prev?.prices, true);
         if (metals.length) snap.sources = [{ label: "gold-api.com (live metals)", url: "https://gold-api.com" }, ...(snap.sources ?? [])];
         return snap;

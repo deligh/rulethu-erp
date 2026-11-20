@@ -295,6 +295,7 @@ export interface MarketSnapshot {
   stories?: NewsStory[];     // expandable news cards (commodities + broader markets)
   sources?: NewsSource[];    // where the prices came from (Kitco etc.)
   demo?: boolean;            // true if produced by the fallback (no live AI)
+  editionId?: string;        // stable id for a full brief edition (archived to history)
 }
 export interface NewsComment {
   id: string;
@@ -451,6 +452,7 @@ interface AppData extends Collections {
   messages: ChatMessage[];
   notifications: AppNotification[];
   market: MarketSnapshot | null;   // latest shared market digest
+  marketHistory: MarketSnapshot[]; // past full editions (news-hub history), newest first
   digestDate: string | null;       // yyyy-mm-dd of the last auto-posted daily digest
 }
 
@@ -556,6 +558,7 @@ const SEED: AppData = {
     { id: "LP-6", name: "East Africa Insurance Co.", type: "Institutional", contact: "P. Otieno", email: "", committed: 20_000_000, called: 0, distributed: 0, relationship: "Prospect", owner: "Delight", lastContact: "2026-10-20", note: "Reviewing PPM; IC meets their board Jan.", createdAt: "2026-08-12T00:00:00Z" },
   ],
   market: null,
+  marketHistory: [],
   digestDate: null,
 };
 
@@ -584,6 +587,7 @@ interface Ctx extends AppData {
   publishReport: (report: ResearchReport, opts?: { summary?: string; attachment?: Attachment }) => void;
   // market news feed
   setMarket: (snap: MarketSnapshot) => void;
+  pushMarketHistory: (edition: MarketSnapshot) => void;
   setDigestDate: (date: string) => void;
   // generic collection ops
   add: <K extends CKey>(key: K, item: Item<K>, note?: { title: string; body?: string; module?: string }) => void;
@@ -647,6 +651,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   const setMarket: Ctx["setMarket"] = useCallback((snap) => {
     setData((d) => ({ ...d, market: snap }));
+  }, []);
+
+  // Archive a full brief edition into the news-hub history (newest first, deduped
+  // by editionId, capped) so past briefings stay browsable.
+  const pushMarketHistory: Ctx["pushMarketHistory"] = useCallback((edition) => {
+    if (!edition || edition.demo || !edition.stories || edition.stories.length === 0) return;
+    setData((d) => {
+      const key = edition.editionId ?? edition.generatedAt;
+      const existing = d.marketHistory ?? [];
+      if (existing.some((e) => (e.editionId ?? e.generatedAt) === key)) return d;
+      return { ...d, marketHistory: [edition, ...existing].slice(0, 16) };
+    });
   }, []);
 
   const setDigestDate: Ctx["setDigestDate"] = useCallback((date) => {
@@ -904,7 +920,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     ...data,
     hydrated,
     addEntry, importJournals, removeEntry, addLeave, setLeaveStatus, addClaim, setClaimStatus, addMessage, addChannel, addChannelMember, markAllRead, markNoteRead, notify, add, patch, remove, resetAll,
-    raiseRequest, fulfilRequest, setRequestStatus, setMarket, setDigestDate, setChannelContext, addChannelInsight, publishReport,
+    raiseRequest, fulfilRequest, setRequestStatus, setMarket, pushMarketHistory, setDigestDate, setChannelContext, addChannelInsight, publishReport,
   };
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

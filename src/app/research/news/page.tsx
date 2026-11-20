@@ -22,7 +22,7 @@ function timeAgo(iso: string): string {
 }
 
 export default function DailyMarketPage() {
-  const { market, setMarket, newsComments, add } = useAppData();
+  const { market, marketHistory, setMarket, pushMarketHistory, newsComments, add } = useAppData();
   const { user } = useAuth();
   const me = user?.name ?? "Rulethu";
   const [busy, setBusy] = useState(false);
@@ -42,7 +42,16 @@ export default function DailyMarketPage() {
     try {
       const snap = await fetchMarketDigest(marketRef.current);
       // A real brief always wins. A demo brief only applies if we have nothing real.
-      if (!snap.demo || !market || market.demo) setMarket(snap);
+      if (!snap.demo || !market || market.demo) {
+        // Archive the outgoing full edition into the news-hub history before a NEW
+        // full edition replaces it, so past briefings stay browsable.
+        const cur = marketRef.current;
+        const eid = (s: typeof snap) => s.editionId ?? s.generatedAt;
+        if (snap.stories?.length && cur && !cur.demo && cur.stories?.length && eid(cur) !== eid(snap)) {
+          pushMarketHistory(cur);
+        }
+        setMarket(snap);
+      }
       // Show the reason on a demo brief OR a thin (metals-only) brief, so a
       // missing AI section is never a silent mystery.
       const thin = !snap.stories || snap.stories.length === 0;
@@ -87,6 +96,7 @@ export default function DailyMarketPage() {
   }, [quickMetals]);
 
   const [openStory, setOpenStory] = useState<number | null>(null);
+  const [viewEdition, setViewEdition] = useState<typeof market>(null);
 
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
@@ -260,6 +270,32 @@ export default function DailyMarketPage() {
         </div>
       )}
 
+      {/* Previous editions — the news-hub history */}
+      {marketHistory && marketHistory.length > 0 && (
+        <div className="mb-5">
+          <div className="flex items-baseline justify-between mb-2">
+            <h2 className="text-sm font-bold uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>Previous briefings</h2>
+            <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>{marketHistory.length} stored · click to read</span>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {marketHistory.map((ed, i) => (
+              <button
+                key={ed.editionId ?? ed.generatedAt ?? i}
+                onClick={() => { setViewEdition(ed); setOpenStory(null); }}
+                className="shrink-0 w-56 text-left rounded-lg border p-3"
+                style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}
+              >
+                <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+                  {new Date(ed.generatedAt).toLocaleString("en-GB", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                </div>
+                <div className="mt-1 text-sm font-semibold leading-snug line-clamp-2" style={{ color: "var(--text)" }}>{ed.headline}</div>
+                <div className="mt-1 text-[11px]" style={{ color: "var(--brand)" }}>{ed.stories?.length ?? 0} stories · read ▾</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* AI market take */}
       {market && (
         <div className="rounded-xl border p-5 mb-5" style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}>
@@ -387,6 +423,50 @@ export default function DailyMarketPage() {
           </ul>
         )}
       </div>
+
+      {/* Past-edition reader (news-hub history) */}
+      {viewEdition && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setViewEdition(null)}>
+          <div className="w-full max-w-3xl rounded-xl border my-4" style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 border-b p-4" style={{ borderColor: "var(--border)" }}>
+              <div>
+                <div className="text-[11px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+                  Archived briefing · {new Date(viewEdition.generatedAt).toLocaleString("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </div>
+                <h2 className="mt-0.5 text-base font-bold" style={{ color: "var(--text)" }}><Bold text={viewEdition.headline} /></h2>
+              </div>
+              <button onClick={() => setViewEdition(null)} className="shrink-0 rounded-md border px-2.5 py-1 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>✕ Close</button>
+            </div>
+            <div className="p-4 space-y-4">
+              {viewEdition.prices.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {viewEdition.prices.map((p, i) => (
+                    <div key={i} className="rounded-md border px-2.5 py-1.5" style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}>
+                      <div className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>{p.name}</div>
+                      <div className="text-sm font-bold" style={{ color: "var(--text)" }}>{p.value} {p.change && <span className="text-[11px] font-semibold" style={{ color: p.dir === "up" ? "var(--pos)" : p.dir === "down" ? "var(--neg)" : "var(--text-muted)" }}>{p.change}</span>}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {viewEdition.commentary && <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text-muted)" }}><Bold text={cleanCommentary(viewEdition.commentary)} /></p>}
+              {viewEdition.stories && viewEdition.stories.length > 0 && (
+                <div className="space-y-2">
+                  {viewEdition.stories.map((s, i) => (
+                    <div key={i} className="rounded-lg border p-3" style={{ borderColor: "var(--border)" }}>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5" style={{ background: "var(--surface-2)", color: "var(--brand)" }}>{s.category}</span>
+                      </div>
+                      <h3 className="text-sm font-bold" style={{ color: "var(--text)" }}>{s.title}</h3>
+                      <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>{s.detail}</p>
+                      {s.takeaway && <p className="mt-1.5 text-xs" style={{ color: "var(--text)" }}><b>Rulethu read:</b> {s.takeaway}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
