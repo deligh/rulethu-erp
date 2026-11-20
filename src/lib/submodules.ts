@@ -46,6 +46,7 @@ export const SUBMODULES: Record<ModuleKey, SubModuleDef[]> = {
     { slug: "", name: "Assistant", status: "live" },
     { slug: "studio", name: "Document Studio", status: "live", custom: true },
     { slug: "research", name: "Deep Research", status: "live", custom: true },
+    { slug: "rooms", name: "Deal Rooms", status: "live", custom: true },
     { slug: "meetings", name: "Meeting Notes", status: "live", custom: true },
     { slug: "templates", name: "Templates", status: "live", custom: true },
   ],

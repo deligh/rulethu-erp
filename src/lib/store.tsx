@@ -407,6 +407,20 @@ export interface FinStatement {
   publishedAt: string;
 }
 
+// Deal Rooms — a persistent AI workspace per company/deal, with its own memory
+// (notes) and chat. Optionally linked to a live holding or pipeline deal.
+export interface DealRoom {
+  id: string;
+  name: string;              // room title (company / deal name)
+  subject?: string;          // one-line what this room is about
+  linkKind?: "holding" | "deal";
+  linkId?: string;           // id of the linked holding/deal (pulls live data)
+  createdBy: string;
+  createdAt: string;
+}
+export interface DealRoomNote { id: string; roomId: string; text: string; author: string; createdAt: string; }
+export interface DealRoomChat { id: string; roomId: string; role: "user" | "ai"; text: string; author: string; createdAt: string; }
+
 // Collections that support generic add / patch.
 interface Collections {
   knowledge: KnowledgeDoc[];
@@ -440,6 +454,9 @@ interface Collections {
   boardNotes: BoardNote[];
   holdings: Holding[];
   investors: Investor[];
+  dealRooms: DealRoom[];
+  dealRoomNotes: DealRoomNote[];
+  dealRoomChats: DealRoomChat[];
 }
 type CKey = keyof Collections;
 type Item<K extends CKey> = Collections[K][number];
@@ -541,6 +558,16 @@ const SEED: AppData = {
     { id: "BN-2", author: "Research Desk", text: "Lithium price risk → stress off-take economics", color: "var(--lz-blue-bg)", x: 44, y: 32, createdAt: "2026-11-16T00:00:00Z" },
     { id: "BN-3", author: "Gamu", text: "Dry-Port: corridor volumes +6% q/q", color: "var(--lz-green-bg)", x: 70, y: 22, createdAt: "2026-11-16T00:00:00Z" },
   ],
+  dealRooms: [
+    { id: "DR-1", name: "AgriFin Microbank", subject: "Turnaround monitoring — PAR elevated, 25% stake", linkKind: "holding", linkId: "H-6", createdBy: "Delight", createdAt: "2026-11-10T00:00:00Z" },
+    { id: "DR-2", name: "40MW Solar IPP", subject: "Tariff negotiation & IC readiness", linkKind: "holding", linkId: "H-3", createdBy: "Blessed", createdAt: "2026-11-12T00:00:00Z" },
+  ],
+  dealRoomNotes: [
+    { id: "DN-1", roomId: "DR-1", text: "PAR>30 at 11.4% (Oct). Turnaround plan: tighten underwriting, write off the aged book, inject ~US$200k working capital.", author: "Delight", createdAt: "2026-11-10T00:00:00Z" },
+    { id: "DN-2", roomId: "DR-1", text: "New credit head started 1 Nov; board now meets monthly to track PAR and collections.", author: "Delight", createdAt: "2026-11-12T00:00:00Z" },
+    { id: "DN-3", roomId: "DR-2", text: "PPA ask: 8.5c/kWh over 20yr with ZESA offtake. IC wants confirmatory DD on grid-connection cost before approval.", author: "Blessed", createdAt: "2026-11-12T00:00:00Z" },
+  ],
+  dealRoomChats: [],
   knowledge: [],
   finStatements: [],
   holdings: [
