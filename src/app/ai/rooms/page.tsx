@@ -19,6 +19,9 @@ export default function DealRoomsPage() {
   const [note, setNote] = useState("");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [sumBusy, setSumBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // New-room form
   const [rName, setRName] = useState("");
@@ -31,6 +34,7 @@ export default function DealRoomsPage() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chats.length, busy]);
+  useEffect(() => { setSummary(null); setCopied(false); }, [activeId]);
 
   // Linked live entity for the active room.
   const linked = useMemo(() => {
@@ -102,6 +106,27 @@ export default function DealRoomsPage() {
     setBusy(false);
   };
 
+  const summarize = async () => {
+    if (!active) return;
+    setSumBusy(true); setSummary(null); setCopied(false);
+    const memory = notes.length ? notes.map((n) => `- ${n.text}`).join("\n") : "(no memory notes)";
+    const convo = chats.slice(-10).map((c) => `${c.role === "ai" ? "AI" : "Team"}: ${c.text}`).join("\n");
+    const text = await askClaude({
+      system:
+        `You are Rulethu AI. Produce a crisp status briefing for the deal room "${active.name}" so a colleague gets up to speed in about 20 seconds. ` +
+        "Use ONLY the memory, linked live data and conversation provided — do not invent facts. " +
+        "Plain text, no markdown asterisks, with these short labelled sections, each on its own lines:\n" +
+        "Status: (one line)\nKey facts: (2-4 short bullets, start each with - )\nRisks: (2-3 bullets)\nNext steps: (2-3 bullets). No preamble or sign-off.",
+      prompt:
+        `${active.subject ? `ABOUT: ${active.subject}\n` : ""}${linked ? linked.context + "\n" : ""}` +
+        `MEMORY NOTES:\n${memory}\n${convo ? `\nRECENT CONVERSATION:\n${convo}\n` : ""}\n\nWrite the briefing now:`,
+      model: "sonnet",
+      maxTokens: 700,
+    });
+    setSummary(text || `Couldn't summarize just now (${aiLastError() ?? "no response"}).`);
+    setSumBusy(false);
+  };
+
   const linkOptions = [
     ...holdings.map((h) => ({ value: `holding:${h.id}`, label: `Holding · ${h.company}` })),
     ...deals.map((d) => ({ value: `deal:${d.id}`, label: `Deal · ${d.name}` })),
@@ -160,9 +185,30 @@ export default function DealRoomsPage() {
                   <h2 className="text-lg font-bold" style={{ color: "var(--text)" }}>{active.name}</h2>
                   {active.subject && <p className="text-sm" style={{ color: "var(--text-muted)" }}>{active.subject}</p>}
                 </div>
-                <button onClick={() => { if (confirm(`Delete the room "${active.name}" and its notes & chat?`)) { dealRoomNotes.filter((n) => n.roomId === active.id).forEach((n) => remove("dealRoomNotes", n.id)); dealRoomChats.filter((c) => c.roomId === active.id).forEach((c) => remove("dealRoomChats", c.id)); remove("dealRooms", active.id); setActiveId(null); } }}
-                  className="text-[11px] font-medium" style={{ color: "var(--neg)" }}>Delete room</button>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button onClick={summarize} disabled={sumBusy} className="rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" style={{ background: "var(--brand)" }}>
+                    {sumBusy ? "Summarizing…" : "✦ Summarize room"}
+                  </button>
+                  <button onClick={() => { if (confirm(`Delete the room "${active.name}" and its notes & chat?`)) { dealRoomNotes.filter((n) => n.roomId === active.id).forEach((n) => remove("dealRoomNotes", n.id)); dealRoomChats.filter((c) => c.roomId === active.id).forEach((c) => remove("dealRoomChats", c.id)); remove("dealRooms", active.id); setActiveId(null); } }}
+                    className="text-[11px] font-medium" style={{ color: "var(--neg)" }}>Delete</button>
+                </div>
               </div>
+
+              {(summary || sumBusy) && (
+                <div className="mt-3 rounded-lg border p-3" style={{ borderColor: "var(--brand)", background: "color-mix(in srgb, var(--brand) 5%, transparent)" }}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1.5" style={{ color: "var(--brand)" }}><span style={{ color: "var(--accent)" }}>✦</span> Room summary</span>
+                    {summary && !sumBusy && (
+                      <button onClick={() => { navigator.clipboard?.writeText(summary).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }} className="text-[11px] font-medium" style={{ color: "var(--text-faint)" }}>{copied ? "Copied ✓" : "Copy"}</button>
+                    )}
+                  </div>
+                  {sumBusy ? (
+                    <p className="text-sm py-1" style={{ color: "var(--text-muted)" }}>Reading the room&apos;s memory and writing the briefing…</p>
+                  ) : (
+                    <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--text)" }}>{summary}</p>
+                  )}
+                </div>
+              )}
               {linked && (
                 <div className="mt-3 rounded-lg border p-3" style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}>
                   <div className="flex items-center gap-2 mb-2">
