@@ -101,6 +101,23 @@ export default function BoardPage() {
     f.cells.forEach((c) => add("boardNotes", { id: genId("BN"), author: f.title, text: c.text, color: c.color, x: c.x, y: c.y, createdAt: new Date().toISOString() }));
   };
 
+  // Keep the board readable — snap every note into a clean, non-overlapping grid.
+  const tidy = () => {
+    const n = boardNotes.length; if (!n) return;
+    const cols = n <= 3 ? n : n <= 8 ? 4 : n <= 15 ? 5 : 6;
+    const rows = Math.ceil(n / cols);
+    const stepX = cols > 1 ? 86 / (cols - 1) : 0;
+    const stepY = rows > 1 ? Math.min(24, 80 / (rows - 1)) : 0;
+    boardNotes.forEach((note, i) => {
+      patch("boardNotes", note.id, { x: cols > 1 ? 3 + (i % cols) * stepX : 40, y: 5 + Math.floor(i / cols) * stepY });
+    });
+  };
+
+  const clearBoard = () => {
+    if (!boardNotes.length) return;
+    if (confirm(`Clear all ${boardNotes.length} notes from the board? This can't be undone.`)) boardNotes.forEach((n) => remove("boardNotes", n.id));
+  };
+
   const addNote = () => {
     add("boardNotes", {
       id: genId("BN"),
@@ -154,6 +171,8 @@ export default function BoardPage() {
                 <button key={c} onClick={() => setColor(c)} className="h-5 w-5 rounded-full border-2" style={{ background: c, borderColor: color === c ? "var(--brand)" : "transparent" }} aria-label="colour" />
               ))}
             </div>
+            <button onClick={tidy} disabled={boardNotes.length < 2} className="rounded-md border px-2.5 py-1.5 text-sm font-medium disabled:opacity-40" style={{ borderColor: "var(--border)", color: "var(--text)" }} title="Auto-arrange into a clean grid">⊞ Tidy</button>
+            <button onClick={clearBoard} disabled={!boardNotes.length} className="rounded-md border px-2.5 py-1.5 text-sm font-medium disabled:opacity-40" style={{ borderColor: "var(--border)", color: "var(--neg)" }}>Clear</button>
             <button onClick={addNote} className="rounded-md px-3 py-1.5 text-sm font-semibold text-white" style={{ background: "var(--brand)" }}>+ Note</button>
           </div>
         }
