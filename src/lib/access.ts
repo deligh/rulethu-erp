@@ -26,6 +26,7 @@ export const SHARED_MODULES: ModuleKey[] = [
 
 // Department-restricted modules → which departments may open them.
 export const MODULE_DEPARTMENTS: Partial<Record<ModuleKey, string[]>> = {
+  boardroom: ["Investments", "Finance"],
   finance: ["Finance"],
   treasury: ["Investments", "Finance"],
   investments: ["Investments"],

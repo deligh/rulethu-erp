@@ -37,6 +37,11 @@ export interface SubModuleDef {
 
 export const SUBMODULES: Record<ModuleKey, SubModuleDef[]> = {
   dashboard: [],
+  boardroom: [
+    { slug: "", name: "Command Center", status: "live" },
+    { slug: "stress", name: "Stress-Test", status: "live", custom: true },
+    { slug: "memo", name: "IC Memo", status: "live", custom: true },
+  ],
   ai: [
     { slug: "", name: "Assistant", status: "live" },
     { slug: "studio", name: "Document Studio", status: "live", custom: true },

@@ -2,6 +2,7 @@
 
 export type ModuleKey =
   | "dashboard"
+  | "boardroom"
   | "ai"
   | "workspace"
   | "board"
@@ -54,6 +55,7 @@ const ICONS = {
   board: "M4 4h16v12H4zM8 20h8M12 16v4M8 8h3M8 11h6",
   portfolio: "M3 3v18h18M7 15l3-4 3 3 5-7M18 10h2M18 10v2",
   files: "M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9zM13 2v7h7",
+  command: "M12 2a10 10 0 100 20 10 10 0 000-20zM12 12l5-3M12 12v-5M12 12l-3 4M4 12h2M18 12h2M12 4v1",
 };
 
 export const MODULES: AppModule[] = [
@@ -64,6 +66,17 @@ export const MODULES: AppModule[] = [
     tagline: "Group overview",
     description: "Live view across every function — pipeline, portfolio, reporting and approvals.",
     icon: ICONS.grid,
+    status: "live",
+    group: "core",
+  },
+  {
+    key: "boardroom",
+    name: "Boardroom",
+    href: "/boardroom",
+    tagline: "Executive command center",
+    description:
+      "Mission control for the whole group — live capital, portfolio, pipeline and cash, a Southern Africa exposure map, smart alerts, a what-if scenario stress-test and one-click AI investment-committee memos.",
+    icon: ICONS.command,
     status: "live",
     group: "core",
   },
