@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useAppData, genId } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { askClaude, aiLastError } from "@/lib/aiClient";
@@ -57,6 +57,7 @@ export default function BoardPage() {
   const [topic, setTopic] = useState("");
   const [aiBusy, setAiBusy] = useState<"" | "ideas" | "sum">("");
   const [summary, setSummary] = useState<string | null>(null);
+  const tidyNext = useRef(false);
 
   const brainstorm = async () => {
     const t = topic.trim(); if (!t || aiBusy) return;
@@ -77,6 +78,7 @@ export default function BoardPage() {
     ideas.slice(0, 8).forEach((idea, i) => {
       add("boardNotes", { id: genId("BN"), author: "Rulethu AI", text: idea, color: COLORS[i % COLORS.length], x: 8 + (i % 4) * 22, y: 14 + Math.floor(i / 4) * 32, createdAt: new Date().toISOString() });
     });
+    tidyNext.current = true; // auto-arrange once the new notes are in
     setAiBusy(""); setTopic("");
   };
 
@@ -112,6 +114,12 @@ export default function BoardPage() {
       patch("boardNotes", note.id, { x: cols > 1 ? 3 + (i % cols) * stepX : 40, y: 5 + Math.floor(i / cols) * stepY });
     });
   };
+
+  // After a brainstorm adds its notes, snap the whole board into a clean grid.
+  useEffect(() => {
+    if (tidyNext.current) { tidyNext.current = false; tidy(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardNotes.length]);
 
   const clearBoard = () => {
     if (!boardNotes.length) return;
