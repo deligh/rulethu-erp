@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppData, genId } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { PageHeader, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
-import { fetchMarketDigest, needsRefresh, lastMarketReason } from "@/lib/news";
+import { fetchMarketDigest, refreshLiveMetals, needsRefresh, lastMarketReason } from "@/lib/news";
 
 function Bold({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -30,37 +30,61 @@ export default function DailyMarketPage() {
   const [diag, setDiag] = useState<string | null>(null);
   const triggered = useRef(false);
 
+  // Keep the latest market/busy in refs so the AI-free metals loop can read them
+  // without re-subscribing its interval every render (which would loop).
+  const marketRef = useRef(market);
+  const busyRef = useRef(busy);
+  useEffect(() => { marketRef.current = market; }, [market]);
+  useEffect(() => { busyRef.current = busy; }, [busy]);
+
   const refresh = async () => {
     setBusy(true);
     try {
-      const snap = await fetchMarketDigest();
+      const snap = await fetchMarketDigest(marketRef.current);
       // A real brief always wins. A demo brief only applies if we have nothing real.
       if (!snap.demo || !market || market.demo) setMarket(snap);
-      setDiag(snap.demo ? (lastMarketReason() ?? "The live market desk returned no data.") : null);
+      // Show the reason on a demo brief OR a thin (metals-only) brief, so a
+      // missing AI section is never a silent mystery.
+      const thin = !snap.stories || snap.stories.length === 0;
+      setDiag(snap.demo || thin ? lastMarketReason() : null);
     } finally {
       setBusy(false);
     }
   };
 
-  // On open: show the cached brief immediately. Only fetch if there is NOTHING
-  // cached, or the cached brief is genuinely older than the 3-hour cadence — so
-  // signing in never triggers a reload when a recent brief already exists.
+  // Cheap, AI-free refresh of just the live metals (gold/PGMs) from gold-api.com.
+  // Stable identity (no deps) so its effect subscribes once; reads live state via
+  // refs. This is what makes the headline prices update on their own.
+  const quickMetals = useCallback(async () => {
+    if (busyRef.current) return;
+    try {
+      const snap = await refreshLiveMetals(marketRef.current);
+      if (snap) setMarket(snap);
+    } catch { /* ignore — never blocks the page */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // On open: pull live metals immediately (fast, always works), then run the full
+  // AI brief only if there's nothing cached or it's aged past the 3-hour cadence.
   useEffect(() => {
     if (triggered.current) return;
     triggered.current = true;
+    quickMetals();
     if (needsRefresh(market)) refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // While the page stays open, refresh on the cadence (and on focus) only when
-  // the brief has actually aged past REFRESH_HOURS — never just because it's demo.
+  // While the page stays open: live metals every 2 min + on focus (cheap, free);
+  // the full AI brief only when it has genuinely aged past REFRESH_HOURS.
   useEffect(() => {
-    const tick = () => { if (!busy && needsRefresh(market)) refresh(); };
-    const id = setInterval(tick, 30 * 60 * 1000); // re-check every 30 min
-    window.addEventListener("focus", tick);
-    return () => { clearInterval(id); window.removeEventListener("focus", tick); };
+    const id = setInterval(() => {
+      quickMetals();
+      if (!busyRef.current && needsRefresh(marketRef.current)) refresh();
+    }, 2 * 60 * 1000);
+    window.addEventListener("focus", quickMetals);
+    return () => { clearInterval(id); window.removeEventListener("focus", quickMetals); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [market, busy]);
+  }, [quickMetals]);
 
   const [openStory, setOpenStory] = useState<number | null>(null);
 
@@ -117,7 +141,7 @@ export default function DailyMarketPage() {
     <div className="page-enter">
       <PageHeader
         title="Daily Market"
-        subtitle="Live commodity prices and a daily AI briefing — commodities and the wider market — through the Rulethu lens. Cached and shared across the group; it refreshes on a 3-hour cadence, not on every login."
+        subtitle="Gold, platinum & palladium stream live (free feed, updates on their own); the AI briefing — Brent, lithium, ZSE and today's stories — refreshes on a 3-hour cadence. Shared across the group."
         actions={
           <div className="flex items-center gap-2">
             {busy && market && <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-faint)" }}><span className="inline-block h-3 w-3 rounded-full border-2 animate-spin" style={{ borderColor: "var(--brand)", borderTopColor: "transparent" }} />updating</span>}
@@ -156,7 +180,10 @@ export default function DailyMarketPage() {
             const arrow = p.dir === "up" ? "▲" : p.dir === "down" ? "▼" : "▬";
             return (
               <div key={i} className="rz-card rounded-xl border p-4" style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)", animationDelay: `${i * 60}ms` }}>
-                <div className="text-[11px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--text-faint)" }} title={p.name}>{p.name}</div>
+                <div className="flex items-center gap-1.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--text-faint)" }} title={p.name}>{p.name}</div>
+                  {p.live && <span className="inline-flex items-center gap-1 shrink-0 text-[9px] font-bold uppercase tracking-wider" style={{ color: "var(--pos)" }}><span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "var(--pos)" }} />live</span>}
+                </div>
                 <div className="mt-1 text-lg font-bold" style={{ color: "var(--text)" }}>{p.value}</div>
                 {p.change && <div className="mt-0.5 text-xs font-semibold" style={{ color: col }}>{arrow} {p.change}</div>}
                 {p.insight && <div className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--text-muted)" }}>{p.insight}</div>}
@@ -243,10 +270,17 @@ export default function DailyMarketPage() {
               <b>Why no live data:</b> {diag}
             </div>
           )}
+          {!market.demo && diag && (!market.stories || market.stories.length === 0) && (
+            <div className="mt-3 text-[11px]" style={{ color: "var(--text-faint)" }}>
+              Metals are live; the AI brief (Brent, lithium, ZSE and stories) didn&apos;t generate this time — {diag}
+            </div>
+          )}
           <div className="mt-4 text-[11px]" style={{ color: "var(--text-faint)" }}>
             {market.demo
               ? "Demo brief — once the live AI market desk runs, this refreshes with real current prices."
-              : "Generated by Rulethu AI with live web search (Kitco & reputable sources). Prices are indicative; verify before trading."}
+              : (!market.stories || market.stories.length === 0)
+              ? "Gold, platinum & palladium are live from gold-api.com; the AI brief (Brent, lithium, ZSE and stories) will fill in on the next refresh. Prices are indicative; verify before trading."
+              : "Metals live from gold-api.com; Brent / lithium / ZSE and the stories by Rulethu AI with live web search. Prices are indicative; verify before trading."}
           </div>
         </div>
       )}

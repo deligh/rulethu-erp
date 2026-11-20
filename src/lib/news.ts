@@ -117,8 +117,10 @@ function parseDigest(text: string): Partial<MarketSnapshot> | null {
   }
 }
 
-/** Build the live digest (or a demo one). Caller stores it to the shared feed. */
-export async function fetchMarketDigest(): Promise<MarketSnapshot> {
+/** Build the live digest (or a demo one). Caller stores it to the shared feed.
+ *  `prev` is the previously-stored snapshot — used to compute honest price moves
+ *  for the live metals and to preserve commentary if the AI brief is unavailable. */
+export async function fetchMarketDigest(prev?: MarketSnapshot | null): Promise<MarketSnapshot> {
   const now = new Date();
   const base: MarketSnapshot = {
     date: now.toISOString().slice(0, 10),
@@ -132,18 +134,24 @@ export async function fetchMarketDigest(): Promise<MarketSnapshot> {
   const nowStr = now.toLocaleString("en-GB", { timeZone: "Africa/Harare", weekday: "long", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const todayStr = now.toLocaleDateString("en-GB", { timeZone: "Africa/Harare", day: "2-digit", month: "long", year: "numeric" });
 
+  // Live metals (gold/PGMs) — free, no-key, no AI quota. Fetched up front, in
+  // parallel with the AI brief, so the headline prices are current regardless of
+  // whether the AI brief succeeds.
+  const { fetchLiveMetals, mergeLiveMetals, metalsOnlySnapshot } = await import("./prices");
+  const metalsPromise = fetchLiveMetals();
+
   try {
     const { askClaude } = await import("./aiClient");
     const text = await askClaude({
       system: MARKET_SYSTEM,
       prompt:
         `RIGHT NOW it is ${nowStr} Central Africa Time (UTC+2). TODAY is ${todayStr}. Produce TODAY's Rulethu market brief with the LATEST real prices.\n` +
-        "PRICES — use the web_fetch tool to read these exact pages directly (do NOT rely on open web search for prices):\n" +
-        "• Gold spot ($/oz): fetch https://goldprice.org/ (or https://www.kitco.com/charts/gold)\n" +
-        "• Platinum ($/oz): fetch https://www.kitco.com/charts/platinum\n" +
+        "PRICES — Gold, Platinum and Palladium are supplied LIVE from a separate feed, so focus your price work on the rest. " +
+        "Use the web_fetch tool to read these exact pages directly (do NOT rely on open web search for prices):\n" +
         "• Brent Crude ($/bbl): fetch https://oilprice.com/\n" +
         "• Lithium carbonate (per tonne): fetch https://tradingeconomics.com/commodity/lithium\n" +
         "• ZSE All Share Index: fetch https://www.zse.co.zw/ (or https://www.african-markets.com/en/stock-markets/zse)\n" +
+        "You may still include Gold and Platinum rows (they'll be overlaid with the live feed), but prioritise Brent, lithium and ZSE. " +
         "Read the current number from each page. Only if a fetch genuinely returns nothing, use web_search as a fallback for that one item; " +
         "if still unavailable, give your best recent figure and set `change` to 'n/a' — but DO fetch first, do not skip to estimates.\n" +
         "NEWS — then do up to 2 web_search calls for today's market & Africa/SADC headlines to write the `stories`.\n" +
@@ -155,6 +163,7 @@ export async function fetchMarketDigest(): Promise<MarketSnapshot> {
       maxTokens: 7000,
       timeoutMs: 125_000,
     });
+    const metals = await metalsPromise;
     if (!text) {
       const { aiLastError } = await import("./aiClient");
       lastDigestReason = aiLastError() ?? "No response from the market desk.";
@@ -162,16 +171,44 @@ export async function fetchMarketDigest(): Promise<MarketSnapshot> {
       const parsed = parseDigest(text);
       if (parsed && parsed.prices && parsed.prices.length) {
         lastDigestReason = null;
-        return { ...base, ...parsed } as MarketSnapshot;
+        const snap = { ...base, ...parsed } as MarketSnapshot;
+        snap.prices = mergeLiveMetals(snap.prices, metals, prev?.prices);
+        if (metals.length) snap.sources = [{ label: "gold-api.com (live metals)", url: "https://gold-api.com" }, ...(snap.sources ?? [])];
+        return snap;
       }
       lastDigestReason = parsed
         ? `The AI replied but found no prices (reply ${text.length} chars). The web tools may have returned nothing today.`
         : `The AI reply could not be read as a brief (likely truncated; ${text.length} chars). Try Refresh again.`;
     }
+    // AI brief failed — but if the live metals came through, still return a REAL
+    // snapshot (kept, not discarded) so the headline prices refresh regardless.
+    if (metals.length) {
+      return metalsOnlySnapshot(base, metals, prev ?? null);
+    }
   } catch (e) {
     lastDigestReason = `Market desk error: ${String((e as Error)?.message ?? e)}`;
+    const metals = await metalsPromise.catch(() => []);
+    if (metals.length) return metalsOnlySnapshot(base, metals, prev ?? null);
   }
   return demoDigest(base);
+}
+
+/** Lightweight, AI-free refresh of just the live metals, merged onto an existing
+ *  snapshot. Cheap enough to call on open/focus/interval; never returns demo. */
+export async function refreshLiveMetals(prev: MarketSnapshot | null): Promise<MarketSnapshot | null> {
+  const { fetchLiveMetals, mergeLiveMetals, metalsOnlySnapshot } = await import("./prices");
+  const metals = await fetchLiveMetals();
+  if (!metals.length) return null;
+  const now = new Date();
+  if (prev && !prev.demo) {
+    return {
+      ...prev,
+      generatedAt: now.toISOString(),
+      prices: mergeLiveMetals(prev.prices, metals, prev.prices),
+    };
+  }
+  const base: MarketSnapshot = { date: now.toISOString().slice(0, 10), generatedAt: now.toISOString(), prices: [], headline: "", commentary: "", watch: [] };
+  return metalsOnlySnapshot(base, metals, prev ?? null);
 }
 
 /** Clearly-labelled fallback so the feed always shows something sensible. */

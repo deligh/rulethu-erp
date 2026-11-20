@@ -271,6 +271,9 @@ export interface MarketPrice {
   dir?: "up" | "down" | "flat";
   source?: string;     // e.g. "Kitco"
   insight?: string;    // one-line AI read on this specific move
+  raw?: number;        // raw numeric price (live feed) — for honest change math
+  live?: boolean;      // true if from a live market feed (not the AI brief)
+  at?: string;         // ISO time the live feed last updated this price
 }
 export interface NewsSource { label: string; url: string }
 export interface NewsStory {

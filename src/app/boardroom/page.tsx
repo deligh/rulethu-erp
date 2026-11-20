@@ -1,18 +1,38 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useAppData } from "@/lib/store";
 import { PageHeader, Card, Badge, SectionTitle } from "@/components/ui";
 import CountUp from "@/components/CountUp";
 import AfricaMap from "@/components/AfricaMap";
 import { boardSummary, geoExposure, runStress, STRESS_PRESETS } from "@/lib/boardroom";
+import { refreshLiveMetals } from "@/lib/news";
 import { compact, fmtMoney, fmtDate } from "@/lib/format";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default function Boardroom() {
-  const { holdings, deals, investors, loans, tbills, entries, personalEvents, market } = useAppData();
+  const { holdings, deals, investors, loans, tbills, entries, personalEvents, market, setMarket } = useAppData();
+
+  // Keep the ticker's live metals (gold/PGMs) current without visiting Daily
+  // Market — a cheap, AI-free pull on mount + every 2 min. Reads market via a ref
+  // so the interval subscribes once and never loops.
+  const marketRef = useRef(market);
+  useEffect(() => { marketRef.current = market; }, [market]);
+  const quickMetals = useCallback(async () => {
+    try {
+      const snap = await refreshLiveMetals(marketRef.current);
+      if (snap) setMarket(snap);
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    quickMetals();
+    const id = setInterval(quickMetals, 2 * 60 * 1000);
+    window.addEventListener("focus", quickMetals);
+    return () => { clearInterval(id); window.removeEventListener("focus", quickMetals); };
+  }, [quickMetals]);
 
   const s = useMemo(() => boardSummary({
     holdings, deals, investors, loans, tbills, entries,
@@ -46,7 +66,10 @@ export default function Boardroom() {
           <div className="flex items-stretch divide-x overflow-x-auto" style={{ borderColor: "var(--border)" }}>
             {prices.map((p, i) => (
               <div key={i} className="flex-1 min-w-[150px] px-4 py-3">
-                <div className="text-[11px] uppercase tracking-wide truncate" style={{ color: "var(--text-faint)" }}>{p.name}</div>
+                <div className="flex items-center gap-1.5">
+                  <div className="text-[11px] uppercase tracking-wide truncate" style={{ color: "var(--text-faint)" }}>{p.name}</div>
+                  {p.live && <span className="inline-block h-1.5 w-1.5 rounded-full shrink-0 animate-pulse" style={{ background: "var(--pos)" }} title="Live price" />}
+                </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-base font-bold tabular" style={{ color: "var(--text)" }}>{p.value}</span>
                   {p.change && (
