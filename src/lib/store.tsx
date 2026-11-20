@@ -453,6 +453,7 @@ interface AppData extends Collections {
   notifications: AppNotification[];
   market: MarketSnapshot | null;   // latest shared market digest
   marketHistory: MarketSnapshot[]; // past full editions (news-hub history), newest first
+  goldSeries: { t: string; price: number }[]; // stored live gold readings, for the projection model
   digestDate: string | null;       // yyyy-mm-dd of the last auto-posted daily digest
 }
 
@@ -559,6 +560,7 @@ const SEED: AppData = {
   ],
   market: null,
   marketHistory: [],
+  goldSeries: [],
   digestDate: null,
 };
 
@@ -588,6 +590,7 @@ interface Ctx extends AppData {
   // market news feed
   setMarket: (snap: MarketSnapshot) => void;
   pushMarketHistory: (edition: MarketSnapshot) => void;
+  appendGold: (price: number) => void;
   setDigestDate: (date: string) => void;
   // generic collection ops
   add: <K extends CKey>(key: K, item: Item<K>, note?: { title: string; body?: string; module?: string }) => void;
@@ -662,6 +665,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const existing = d.marketHistory ?? [];
       if (existing.some((e) => (e.editionId ?? e.generatedAt) === key)) return d;
       return { ...d, marketHistory: [edition, ...existing].slice(0, 16) };
+    });
+  }, []);
+
+  // Append a live gold reading to the projection series, throttled to ~1 point
+  // per 25 minutes and capped, so it builds a real trend without bloating state.
+  const appendGold: Ctx["appendGold"] = useCallback((price) => {
+    if (!(price > 0)) return;
+    setData((d) => {
+      const s = d.goldSeries ?? [];
+      const last = s[s.length - 1];
+      if (last) {
+        const age = Date.now() - new Date(last.t).getTime();
+        if (age < 25 * 60 * 1000) return d;                 // too soon
+        if (Math.abs(price - last.price) / last.price < 0.0005) return d; // no real move
+      }
+      return { ...d, goldSeries: [...s, { t: new Date().toISOString(), price }].slice(-400) };
     });
   }, []);
 
@@ -920,7 +939,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     ...data,
     hydrated,
     addEntry, importJournals, removeEntry, addLeave, setLeaveStatus, addClaim, setClaimStatus, addMessage, addChannel, addChannelMember, markAllRead, markNoteRead, notify, add, patch, remove, resetAll,
-    raiseRequest, fulfilRequest, setRequestStatus, setMarket, pushMarketHistory, setDigestDate, setChannelContext, addChannelInsight, publishReport,
+    raiseRequest, fulfilRequest, setRequestStatus, setMarket, pushMarketHistory, appendGold, setDigestDate, setChannelContext, addChannelInsight, publishReport,
   };
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

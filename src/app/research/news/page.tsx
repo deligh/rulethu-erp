@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { PageHeader, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
 import { fetchMarketDigest, refreshLiveMetals, needsRefresh, lastMarketReason } from "@/lib/news";
+import GoldOutlook from "@/components/GoldOutlook";
 
 function Bold({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -22,7 +23,7 @@ function timeAgo(iso: string): string {
 }
 
 export default function DailyMarketPage() {
-  const { market, marketHistory, setMarket, pushMarketHistory, newsComments, add } = useAppData();
+  const { market, marketHistory, goldSeries, setMarket, pushMarketHistory, appendGold, newsComments, add } = useAppData();
   const { user } = useAuth();
   const me = user?.name ?? "Rulethu";
   const [busy, setBusy] = useState(false);
@@ -68,7 +69,11 @@ export default function DailyMarketPage() {
     if (busyRef.current) return;
     try {
       const snap = await refreshLiveMetals(marketRef.current);
-      if (snap) setMarket(snap);
+      if (snap) {
+        setMarket(snap);
+        const g = snap.prices.find((p) => p.live && /gold/i.test(p.name));
+        if (g?.raw) appendGold(g.raw); // feed the projection series (throttled in store)
+      }
     } catch { /* ignore — never blocks the page */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -230,6 +235,12 @@ export default function DailyMarketPage() {
           })}
         </div>
       )}
+
+      {/* Gold projection — self-correcting model off the stored gold series */}
+      {(() => {
+        const g = market?.prices?.find((p) => p.live && /gold/i.test(p.name));
+        return g?.raw ? <GoldOutlook series={goldSeries ?? []} anchor={g.raw} anchorAt={g.at ?? market!.generatedAt} /> : null;
+      })()}
 
       {/* Today's briefing — expandable story cards (commodities + wider market) */}
       {market && market.stories && market.stories.length > 0 && (
