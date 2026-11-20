@@ -67,6 +67,8 @@ const MARKET_SYSTEM =
   "(d) TECHNOLOGY & AI — the latest global tech/AI developments AND, importantly, AI & technology GAPS and OPPORTUNITIES in Africa " +
   "(fintech, mobile money, data centres, connectivity, AI adoption, startups, policy) (2-3); " +
   "(e) a couple more from: CRYPTO & digital assets, GEOPOLITICS, ENERGY TRANSITION / climate finance, a notable GLOBAL COMPANY or DEAL, or a WORLD ECONOMY story (1-2). " +
+  "MANDATORY: always include AT LEAST 2 TECHNOLOGY/AI stories and AT LEAST 1 AI-&-TECH-IN-AFRICA story, even on dramatic market days — never let commodities crowd them out. " +
+  "INTERLEAVE the subjects (do not put all commodities first and tech last) so the mix of topics is visible from the top. " +
   "Make the set varied — no two cards on the same narrow topic. Use varied `category` labels: Commodities, Energy, Macro, Markets, Africa & SADC, Zimbabwe, Technology, AI, Crypto, Geopolitics, Deals, Economy. " +
   "Each story: `title` is a sharp headline (<9 words); `summary` is one vivid teaser line; `detail` is 2-3 sentences " +
   "with the actual facts/numbers; `takeaway` is one line on what it means for Rulethu. Make them genuinely interesting and the LATEST you can find. " +
