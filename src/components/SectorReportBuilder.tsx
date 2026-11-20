@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppData, genId, CURRENT_USER } from "@/lib/store";
 import type { ResearchReport } from "@/lib/seed";
 import { PageHeader, Card, Badge } from "@/components/ui";
@@ -122,6 +122,10 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
   const [aiBusy, setAiBusy] = useState(false);
   const [aiDrafted, setAiDrafted] = useState(false);
   const [aiMsg, setAiMsg] = useState<string | null>(null);
+  type Verdict = "ready" | "review" | "insufficient";
+  const [screening, setScreening] = useState<{ verdict: Verdict; notes: string[] } | null>(null);
+  const [recommendation, setRecommendation] = useState<string>("");
+  const autoRan = useRef(false);
 
   const setSector = (i: number, patch: Partial<SectorInput>) =>
     setSectors((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
@@ -156,14 +160,23 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
       "sentence commentary, a sentiment (Positive|Neutral|Negative), and a key " +
       "metric (value + short label) where sensible. Also write a 2-3 sentence " +
       "executive summary. Base it on the dailies; don't invent specific figures " +
-      "you weren't given. Return ONLY JSON — no prose, no code fences — EXACTLY:\n" +
-      '{"summary": string, "sectors": [{"name": string, "sentiment": "Positive"|"Neutral"|"Negative", "highlight": string, "commentary": string, "metricValue": string, "metricLabel": string}]}\n' +
+      "you weren't given.\n" +
+      "THEN SCREEN YOUR OWN OUTPUT as a diligence check before handing it to the lead researcher: " +
+      "verify each sector's highlight/commentary is actually supported by the supplied dailies and market context; " +
+      "flag any figure or claim you could not substantiate; note sectors with thin or no source coverage this period; " +
+      "and check for internal contradictions. Then give the lead researcher a clear recommendation. " +
+      "Set `verdict` to 'ready' (clean, publish-ready), 'review' (publishable after the noted edits) or " +
+      "'insufficient' (too few dailies to consolidate reliably). `notes`: 0–5 concise screening flags. " +
+      "`recommendation`: 1–2 sentences telling the lead what to do (publish as-is, edit X first, or gather more dailies).\n" +
+      "Return ONLY JSON — no prose, no code fences — EXACTLY:\n" +
+      '{"summary": string, "sectors": [{"name": string, "sentiment": "Positive"|"Neutral"|"Negative", "highlight": string, "commentary": string, "metricValue": string, "metricLabel": string}], ' +
+      '"screening": {"verdict": "ready"|"review"|"insufficient", "notes": [string]}, "recommendation": string}\n' +
       "Use the exact sector names provided, in that order.";
     const text = await askClaude({
       system,
-      prompt: `CONTEXT (JSON):\n${JSON.stringify(ctx)}\n\nProduce the ${period} Sector Report JSON now.`,
+      prompt: `CONTEXT (JSON):\n${JSON.stringify(ctx)}\n\nProduce the ${period} Sector Report JSON now — consolidate, screen, and recommend.`,
       model: "sonnet",
-      maxTokens: 3000,
+      maxTokens: 3500,
     });
     if (text) {
       try {
@@ -191,8 +204,17 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
             };
           }));
         }
+        const sc = obj.screening as Record<string, unknown> | undefined;
+        if (sc) {
+          const v = sc.verdict;
+          setScreening({
+            verdict: v === "ready" || v === "insufficient" ? v : "review",
+            notes: Array.isArray(sc.notes) ? sc.notes.map(String).filter(Boolean).slice(0, 6) : [],
+          });
+        }
+        if (obj.recommendation != null) setRecommendation(String(obj.recommendation));
         setAiDrafted(true);
-        setAiMsg(`Draft ready — consolidated from ${sourceDailies.length} daily report${sourceDailies.length === 1 ? "" : "s"}${ctx.marketCommentary ? " + live market" : ""}. Review and edit, then Publish.`);
+        setAiMsg(`Draft ready — consolidated from ${sourceDailies.length} daily report${sourceDailies.length === 1 ? "" : "s"}${ctx.marketCommentary ? " + live market" : ""}. Review the desk's recommendation below, edit if needed, then Publish.`);
       } catch {
         setAiMsg("The AI draft came back malformed — try again, or fill the sectors manually.");
       }
@@ -201,6 +223,14 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
     }
     setAiBusy(false);
   };
+
+  // Minimise manual work: auto-draft once on open when there are dailies to roll
+  // up and nothing has been drafted yet. Publishing always stays a human action.
+  useEffect(() => {
+    if (autoRan.current) return;
+    if (sourceDailies.length > 0 && !aiDrafted && !aiBusy) { autoRan.current = true; draftWithAI(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceDailies.length]);
 
   const dateLabel = useMemo(() => {
     const d = new Date(dateStr);
@@ -277,6 +307,33 @@ export default function SectorReportBuilder({ period }: { period: "Weekly" | "Mo
           <Badge tone={aiDrafted ? "info" : "warn"}>{aiMsg}</Badge>
         </div>
       )}
+
+      {/* Lead researcher review — the AI's self-screening + recommendation */}
+      {(recommendation || screening) && (() => {
+        const v = screening?.verdict ?? "review";
+        const vc = v === "ready" ? "var(--pos)" : v === "insufficient" ? "var(--neg)" : "var(--warn)";
+        const vlabel = v === "ready" ? "READY TO PUBLISH" : v === "insufficient" ? "INSUFFICIENT SOURCES" : "REVIEW SUGGESTED";
+        return (
+          <div className="mb-4 rounded-lg border p-4" style={{ background: "var(--surface)", borderColor: vc, boxShadow: "var(--shadow-card)" }}>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ background: vc }} />
+              <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: vc }}>{vlabel}</span>
+              <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>· AI screening for the lead researcher</span>
+            </div>
+            {recommendation && <p className="text-sm" style={{ color: "var(--text)" }}>{recommendation}</p>}
+            {screening && screening.notes.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {screening.notes.map((n, i) => (
+                  <li key={i} className="flex gap-2 text-[13px]" style={{ color: "var(--text-muted)" }}>
+                    <span style={{ color: vc }}>•</span><span>{n}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-2 text-[11px]" style={{ color: "var(--text-faint)" }}>The desk screened its own draft against this period&apos;s dailies. Edit anything below, then Publish — nothing is published automatically.</p>
+          </div>
+        );
+      })()}
 
       {published && <div className="mb-4"><Badge tone="pos">Published — consolidated report stored & everyone notified</Badge></div>}
 
