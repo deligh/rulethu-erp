@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { PageHeader, Badge } from "@/components/ui";
 import ModuleTabs from "@/components/ModuleTabs";
 import { fetchMarketDigest, refreshLiveMetals, needsRefresh, lastMarketReason } from "@/lib/news";
-import GoldOutlook from "@/components/GoldOutlook";
+import GoldOutlook, { GoldOutlookMini } from "@/components/GoldOutlook";
 
 function Bold({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -102,6 +102,7 @@ export default function DailyMarketPage() {
 
   const [openStory, setOpenStory] = useState<number | null>(null);
   const [viewEdition, setViewEdition] = useState<typeof market>(null);
+  const [goldExpanded, setGoldExpanded] = useState(false);
 
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
@@ -213,34 +214,39 @@ export default function DailyMarketPage() {
         </>
       )}
       {market && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
-          {market.prices.map((p, i) => {
-            const col = p.dir === "up" ? "var(--pos)" : p.dir === "down" ? "var(--neg)" : "var(--text-muted)";
-            const arrow = p.dir === "up" ? "▲" : p.dir === "down" ? "▼" : "▬";
-            return (
-              <div key={i} className="rz-card rounded-xl border p-4" style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)", animationDelay: `${i * 60}ms` }}>
-                <div className="flex items-center gap-1.5">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--text-faint)" }} title={p.name}>{p.name}</div>
-                  {p.live && <span className="inline-flex items-center gap-1 shrink-0 text-[9px] font-bold uppercase tracking-wider" style={{ color: "var(--pos)" }}><span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "var(--pos)" }} />live</span>}
+        <div className="flex flex-col lg:flex-row gap-3 mb-5 items-stretch">
+          <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-3">
+            {market.prices.map((p, i) => {
+              const col = p.dir === "up" ? "var(--pos)" : p.dir === "down" ? "var(--neg)" : "var(--text-muted)";
+              const arrow = p.dir === "up" ? "▲" : p.dir === "down" ? "▼" : "▬";
+              return (
+                <div key={i} className="rz-card rounded-xl border p-4" style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)", animationDelay: `${i * 60}ms` }}>
+                  <div className="flex items-center gap-1.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider truncate" style={{ color: "var(--text-faint)" }} title={p.name}>{p.name}</div>
+                    {p.live && <span className="inline-flex items-center gap-1 shrink-0 text-[9px] font-bold uppercase tracking-wider" style={{ color: "var(--pos)" }}><span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "var(--pos)" }} />live</span>}
+                  </div>
+                  <div className="mt-1 text-lg font-bold" style={{ color: "var(--text)" }}>{p.value}</div>
+                  {p.change && <div className="mt-0.5 text-xs font-semibold" style={{ color: col }}>{arrow} {p.change}</div>}
+                  {cleanInsight(p.insight) && <div className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--text-muted)" }}>{cleanInsight(p.insight)}</div>}
+                  <div className="mt-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
+                    {p.source && <span>via {p.source}</span>}
+                    {p.live && p.at && <span style={{ textTransform: "none" }}>· {timeAgo(p.at)}</span>}
+                  </div>
                 </div>
-                <div className="mt-1 text-lg font-bold" style={{ color: "var(--text)" }}>{p.value}</div>
-                {p.change && <div className="mt-0.5 text-xs font-semibold" style={{ color: col }}>{arrow} {p.change}</div>}
-                {cleanInsight(p.insight) && <div className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--text-muted)" }}>{cleanInsight(p.insight)}</div>}
-                <div className="mt-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider" style={{ color: "var(--text-faint)" }}>
-                  {p.source && <span>via {p.source}</span>}
-                  {p.live && p.at && <span style={{ textTransform: "none" }}>· {timeAgo(p.at)}</span>}
-                </div>
+              );
+            })}
+          </div>
+          {/* Compact gold outlook — top-right; click to expand into the full chart */}
+          {(() => {
+            const g = market.prices.find((p) => p.live && /gold/i.test(p.name));
+            return g?.raw ? (
+              <div className="lg:w-72 shrink-0 flex">
+                <GoldOutlookMini series={goldSeries ?? []} anchor={g.raw} anchorAt={g.at ?? market.generatedAt} onExpand={() => setGoldExpanded(true)} />
               </div>
-            );
-          })}
+            ) : null;
+          })()}
         </div>
       )}
-
-      {/* Gold projection — self-correcting model off the stored gold series */}
-      {(() => {
-        const g = market?.prices?.find((p) => p.live && /gold/i.test(p.name));
-        return g?.raw ? <GoldOutlook series={goldSeries ?? []} anchor={g.raw} anchorAt={g.at ?? market!.generatedAt} /> : null;
-      })()}
 
       {/* Today's briefing — expandable story cards (commodities + wider market) */}
       {market && market.stories && market.stories.length > 0 && (
@@ -434,6 +440,26 @@ export default function DailyMarketPage() {
           </ul>
         )}
       </div>
+
+      {/* Expanded gold outlook */}
+      {goldExpanded && market && (() => {
+        const g = market.prices.find((p) => p.live && /gold/i.test(p.name));
+        if (!g?.raw) return null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setGoldExpanded(false)}>
+            <div className="w-full max-w-3xl rounded-xl border my-4 p-5" style={{ background: "var(--surface)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }} onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold" style={{ color: "var(--text)" }}>Gold outlook</h2>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--pos)" }}><span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "var(--pos)" }} />self-correcting</span>
+                </div>
+                <button onClick={() => setGoldExpanded(false)} className="rounded-md border px-2.5 py-1 text-sm" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>✕ Close</button>
+              </div>
+              <GoldOutlook series={goldSeries ?? []} anchor={g.raw} anchorAt={g.at ?? market.generatedAt} />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Past-edition reader (news-hub history) */}
       {viewEdition && (
