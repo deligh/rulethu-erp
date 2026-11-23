@@ -55,11 +55,21 @@ function extractJson(raw: string): Record<string, unknown> | null {
   return null;
 }
 
+// Split a long transcript into word-bounded chunks for map-reduce summarisation.
+function chunkWords(text: string, perChunk: number): string[] {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= perChunk) return [text.trim()];
+  const chunks: string[] = [];
+  for (let i = 0; i < words.length; i += perChunk) chunks.push(words.slice(i, i + perChunk).join(" "));
+  return chunks;
+}
+
 export default function MeetingNotesPage() {
   const { employees, add, addMessage, channels } = useAppData();
   const { user } = useAuth();
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [min, setMin] = useState<Minutes | null>(null);
   const [created, setCreated] = useState<string | null>(null);
   const iStyle = { background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" };
@@ -137,20 +147,57 @@ export default function MeetingNotesPage() {
 
   const generate = async () => {
     if (!notes.trim()) return;
-    setBusy(true); setMin(null); setCreated(null);
+    setBusy(true); setMin(null); setCreated(null); setProgress(null);
     const team = employees.map((e) => `${e.name} (${e.department})`).join(", ");
+    const wordCount = notes.trim().split(/\s+/).length;
+
+    // Long, raw transcripts (live speech — filler, cross-talk, 10k+ words) can't
+    // be extracted in one pass: the output truncates and the JSON won't parse.
+    // Map-reduce: condense the transcript in parts first, then write the minutes
+    // from the compact notes. Short notes skip straight to the one-shot path.
+    let source = notes.trim();
+    if (wordCount > 5000) {
+      const chunks = chunkWords(notes, 4000);
+      const digests: string[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        setProgress(`Reading the transcript — part ${i + 1} of ${chunks.length}…`);
+        const d = await askClaude({
+          system:
+            "You are condensing ONE part of a long, raw meeting transcript (live speech, with filler words, " +
+            "false starts and cross-talk). Pull out ONLY the substantive meeting content as terse plain-text " +
+            "bullets: topics actually discussed, decisions reached, figures/dates mentioned, and any task or " +
+            "commitment given (note who, if said). Ignore greetings, small talk and tangents. No preamble, bullets only.",
+          prompt: `TRANSCRIPT PART ${i + 1} OF ${chunks.length}:\n${chunks[i]}`,
+          model: "sonnet",
+          maxTokens: 1500,
+          timeoutMs: 90_000,
+        });
+        if (d) digests.push(`--- Part ${i + 1} ---\n${d}`);
+      }
+      if (!digests.length) {
+        setMin({ title: "Couldn't read that", summary: "The AI couldn't process the transcript just now — check your connection and try again.", keyPoints: [], decisions: [], actions: [] });
+        setBusy(false); setProgress(null); return;
+      }
+      source = digests.join("\n\n");
+      setProgress("Writing the minutes…");
+    }
+
     const text = await askClaude({
       system:
-        "You are Rulethu AI's meeting assistant at an African investment group in Harare. Turn rough meeting notes into clean minutes. " +
+        "You are Rulethu AI's meeting assistant at an African investment group in Harare. Turn the meeting notes " +
+        "(which may be condensed bullet notes from a long transcript) into clean, professional minutes. " +
         `Today's date is ${TODAY}; any due dates you infer must be in the future relative to today. ` +
         "Respond with a SINGLE JSON object and ABSOLUTELY NOTHING ELSE: no markdown, no code fences, no preamble, no commentary, no 'Correction', and never repeat the JSON. " +
         'Shape exactly: {"title": string, "summary": string, "keyPoints": [string], "decisions": [string], "actions": [{"owner": string, "task": string, "due": "yyyy-mm-dd"}]}. ' +
+        "summary: 2-4 sentences. keyPoints: the main discussion points. decisions: concrete decisions made. " +
         "For each action, set owner to the EXACT name (no role or bracket) of the most appropriate person from this team: " + team + ". " +
-        "If no clear owner, pick the best fit. Keep it concise and specific.",
-      prompt: `MEETING NOTES:\n${notes.trim()}\n\nReturn the minutes JSON now — the JSON object only.`,
-      model: "haiku",   // structured JSON extraction is reliable on Haiku + the robust parser
-      maxTokens: 2000,
+        "If no clear owner, pick the best fit. Keep each item concise and specific.",
+      prompt: `MEETING NOTES:\n${source}\n\nReturn the minutes JSON now — the JSON object only.`,
+      model: "sonnet",   // long/noisy transcripts need the stronger model for reliable extraction
+      maxTokens: 4000,
+      timeoutMs: 90_000,
     });
+    setProgress(null);
     const o = extractJson(text ?? "");
     if (o) {
       const names = employees.map((e) => e.name);
@@ -209,6 +256,10 @@ export default function MeetingNotesPage() {
     setCreated(`Minutes posted to #${ch.name}.`);
   };
 
+  const wordCountNote = busy && notes.trim().split(/\s+/).length > 5000
+    ? "Long transcript — reading it in parts, this can take a minute. Please keep this tab open."
+    : null;
+
   return (
     <div>
       <PageHeader
@@ -258,14 +309,15 @@ export default function MeetingNotesPage() {
             <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>{notes.trim() ? `${notes.trim().split(/\s+/).length} words` : ""}</span>
           </div>
           <button onClick={generate} disabled={busy || !notes.trim() || recording} className="mt-2 w-full rounded-md px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50" style={{ background: "var(--brand)" }}>
-            {busy ? "Writing minutes…" : recording ? "Stop recording to generate" : "✨ Generate minutes & actions"}
+            {busy ? (progress ?? "Writing minutes…") : recording ? "Stop recording to generate" : "✨ Generate minutes & actions"}
           </button>
+          {busy && wordCountNote && <p className="mt-1.5 text-[11px] text-center" style={{ color: "var(--text-faint)" }}>{wordCountNote}</p>}
         </Card>
 
         <div>
           <SectionTitle>{min ? "2 · Minutes" : "Minutes"}</SectionTitle>
           {!min && !busy && <Card className="border-dashed"><p className="py-8 text-center text-sm" style={{ color: "var(--text-faint)" }}>Your minutes and assigned action items will appear here.</p></Card>}
-          {busy && <Card><p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>Reading the notes and drafting minutes…</p></Card>}
+          {busy && <Card><p className="py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>{progress ?? "Reading the notes and drafting minutes…"}</p></Card>}
           {min && (
             <Card className="space-y-4">
               <div>
